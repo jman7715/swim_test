@@ -33,7 +33,7 @@
 참가비현황	        entryFee	납부완료 / 미납 등
 주소	            address	거주지 또는 기념품 배송지
 소속클럽	        club	소속 수영 동호회 또는 팀명
-희망경기	        desiredEvent	1단계 신청 시 희망 종목
+희망종목	        desiredEvent	1단계 신청 시 희망 종목
 예상기록	    expectedTime	초장거리 기록 예측용
 보호자이름	        guardianName	비상 연락용
 보호자연락처	    guardianPhone	비상 연락용 번호
