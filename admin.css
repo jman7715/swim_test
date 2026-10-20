@@ -1,0 +1,665 @@
+/* ==========================================
+   1. 전체 페이지 기본 설정 (배경 및 폰트)
+   ========================================== */
+body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    margin: 0;
+    padding: 20px;
+    background-color: #f4f6f8;
+    color: #333;
+}
+
+/* ==========================================
+   2. 메인 컨테이너 박스 (화면 중앙 정렬 카드)
+   ========================================== */
+.container {
+    max-width: 95%;
+    margin: 0 auto;
+    background: white;
+    padding: 20px 15px;
+    border-radius: 12px;
+    box-shadow: 0 4px 10px rgba(0, 0, 0, 0.08);
+}
+
+/* ==========================================
+   3. 메인 타이틀 (제목 텍스트)
+   ========================================== */
+h2 {
+    font-size: 32px;
+    text-align: center;
+    color: #1a1a1a;
+    margin-bottom: 30px;
+}
+
+/* ==========================================
+   4. 입력 폼 그룹 및 라벨 설정
+   ========================================== */
+.form-group {
+    margin-bottom: 25px;
+}
+
+label {
+    display: block;
+    margin-bottom: 10px;
+    font-size: 22px;
+    font-weight: bold;
+    color: #444;
+}
+
+/* ==========================================
+   5. 입력창 (Input & Textarea) 디자인
+   ========================================== */
+input, textarea {
+    width: 100%;
+    height: 72px;
+    padding: 0 18px;
+    font-size: 26px;
+    box-sizing: border-box;
+    border: 2px solid #ccc;
+    border-radius: 10px;
+    outline: none;
+    transition: border-color 0.2s;
+    font-family: inherit;
+}
+
+textarea {
+    height: 72px;
+    padding-top: 18px;
+    resize: none;
+}
+
+input:focus, textarea:focus {
+    border-color: #007BFF;
+    box-shadow: 0 0 0 4px rgba(0, 123, 255, 0.15);
+}
+
+/* ==========================================
+   6. 라디오 버튼 그룹 및 간격 조절
+   ========================================== */
+.radio-group {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.radio-label {
+    display: flex;
+    align-items: center;
+    font-size: 24px;
+    font-weight: normal;
+    color: #333;
+    cursor: pointer;
+    margin-bottom: 0;
+}
+
+.radio-label input[type="radio"] {
+    width: 28px;
+    height: 28px;
+    margin-right: 12px;
+    cursor: pointer;
+    accent-color: #007BFF;
+    flex-shrink: 0;
+}
+
+.form-group:has(#club) {
+    margin-top: -50px;
+}
+
+.form-group:has(#memo) {
+    margin-top: -50px;
+}
+
+/* ==========================================
+   7. 버튼 디자인 (조회하기 / 접수하기)
+   ========================================== */
+button {
+    width: 100%;
+    height: 75px;
+    background-color: #007BFF;
+    color: white;
+    border: none;
+    border-radius: 10px;
+    font-size: 26px;
+    font-weight: bold;
+    cursor: pointer;
+    margin-top: 15px;
+    transition: background-color 0.2s;
+}
+
+button:active {
+    background-color: #0056b3;
+}
+
+/* ==========================================
+   8. 결과 및 오류 박스 디자인
+   ========================================== */
+.result-box {
+    margin-top: 25px;
+    padding: 30px;
+    background: #e9ecef;
+    border-radius: 10px;
+}
+
+.result-box h3 {
+    margin-top: 0;
+    font-size: 30px;
+    color: #004085;
+}
+
+.result-box p {
+    font-size: 24px;
+    margin: 18px 0;
+    line-height: 1.6;
+}
+
+.error-box {
+    margin-top: 25px;
+    padding: 30px;
+    background: #f8d7da;
+    color: #721c24;
+    border-radius: 10px;
+    font-size: 24px;
+    text-align: center;
+    line-height: 1.5;
+}
+
+/* ==========================================
+   9. 공지사항 및 이미지 영역
+   ========================================== */
+.notice {
+    margin-top: 30px;
+    padding: 20px;
+    background: #fff3cd;
+    border: 1px solid #ffeeba;
+    border-radius: 10px;
+    font-size: 20px;
+}
+
+.notice h3 {
+    margin-top: 0;
+    font-size: 24px;
+    color: #856404;
+}
+
+.images {
+    margin-top: 30px;
+    text-align: center;
+}
+
+.images h3 {
+    font-size: 24px;
+    margin-bottom: 15px;
+}
+
+.images img {
+    max-width: 100%;
+    height: auto;
+    margin-bottom: 15px;
+    border-radius: 10px;
+}
+
+/* ==========================================
+   10. 관리자 및 대시보드 관련 기본 스타일
+   ========================================== */
+.back-btn {
+    display: block;
+    text-align: center;
+    margin-top: 30px;
+    text-decoration: none;
+    background-color: #6c757d;
+    color: white;
+    height: 70px;
+    line-height: 70px;
+    border-radius: 10px;
+    font-size: 24px;
+    font-weight: bold;
+}
+
+.header-flex {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    border-bottom: 2px solid #eee;
+    padding-bottom: 3px;
+    margin-bottom: 2px;
+}
+
+.admin-info {
+    font-size: 25px;          /* 관리자 권한 표시 */
+    font-weight: bold;
+}
+
+.auth-badge {                   /* 관리자 권한 표시 */
+    font-size: 25px;
+    padding: 2px 2px;
+    background: #e9ecef;
+    color: #495057;
+    border-radius: 2px;
+    font-weight: bold;
+    margin-left: 2px;
+}
+
+.logout-btn {                       /* 관리자 접수 현황의 로그아웃 버튼 */
+    padding: 12px 24px;
+    font-size: 21px;
+    background-color: #dc3545;
+    color: white;
+    text-decoration: none;
+    border-radius: 6px;
+}
+
+.stat-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 15px;
+    margin-bottom: 30px;
+    text-align: center;
+}
+
+.stat-card-link {
+    text-decoration: none;
+    color: inherit;
+    display: block;
+}
+
+.stat-card {
+    background: #f8f9fa;
+    padding: 20px 10px;
+    border-radius: 10px;
+    border: 1px solid #e9ecef;
+    transition: transform 0.1s;
+}
+
+.stat-card:hover {
+    transform: translateY(-3px);
+    border-color: #007BFF;
+}
+
+.stat-card h4 {
+    margin: 0 0 10px 0;
+    font-size: 15px;
+    color: #6c757d;
+}
+
+.stat-card .number {
+    font-size: 24px;
+    font-weight: bold;
+    color: #333;
+}
+
+.stat-card.event-card .number { color: #007BFF; }
+.stat-card.paid .number { color: #28a745; }
+.stat-card.unpaid .number { color: #dc3545; }
+.stat-card.free .number { color: #fd7e14; }
+.stat-card.unknown .number { color: #6c757d; }
+
+.section-title {
+    font-size: 20px;
+    margin-top: 30px;
+    margin-bottom: 15px;
+    border-left: 4px solid #007BFF;
+    padding-left: 10px;
+}
+
+.view-all-btn {
+    display: inline-block;
+    padding: 12px 24px;
+    background: #007BFF;
+    color: white;
+    text-decoration: none;
+    border-radius: 6px;
+    font-weight: bold;
+    font-size: 16px;
+}
+
+.view-all-btn:hover { background: #0056b3; }
+
+.disabled-btn {
+    display: inline-block;
+    padding: 12px 24px;
+    background: #6c757d;
+    color: #e9ecef;
+    border-radius: 6px;
+    font-weight: bold;
+    font-size: 16px;
+    cursor: not-allowed;
+}
+
+.alert-denied {
+    padding: 12px;
+    background: #f8d7da;
+    color: #721c24;
+    border-radius: 6px;
+    margin-bottom: 20px;
+    text-align: center;
+    font-weight: bold;
+}
+
+
+/* ==========================================
+   11. 검색 영역 스타일
+   ========================================== */
+
+/* 전체 검색 박스 배경 및 테두리 설정 */
+.search-box {
+    background: #f8f9fa;
+    padding: 20px;
+    border-radius: 8px;
+    border: 1px solid #e9ecef;
+    margin-bottom: 20px;
+}
+
+/* 검색 폼 내부 입력 요소 배치 */
+.search-form {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 12px;
+}
+
+/* 검색창 입력 박스 및 셀렉트 박스 기본 스타일 */
+.search-form input,
+.search-form select {
+    width: 100%;
+    height: 48px;
+    padding: 10px;
+    font-size: 18px;
+    border: 1px solid #ced4da;
+    border-radius: 6px;
+    background-color: #fff;
+    box-sizing: border-box;
+}
+
+.search-form input[name="searchPhone4"] {
+    text-align: center;
+}
+
+/* 검색 및 다운로드 버튼 컨테이너 */
+.search-btn-container {
+    grid-column: span 4;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-top: 10px;
+}
+
+/* 검색 실행 버튼 스타일 */
+.search-btn {
+    padding: 9px 20px;
+    background: #007BFF;
+    color: white;
+    border: none;
+    border-radius: 4px;
+    font-weight: bold;
+    cursor: pointer;
+}
+
+/* 엑셀 다운로드 버튼 스타일 */
+.excel-download-btn {
+    padding: 9px 18px;
+    background: #28a745;
+    color: white;
+    border: none;
+    border-radius: 4px;
+    font-weight: bold;
+    text-decoration: none;
+    font-size: 14px;
+    display: inline-block;
+}
+
+.excel-download-btn:hover { background: #218838; }
+
+
+/* ==========================================
+   12. PC 화면 전용 테이블 스타일 (769px 이상에서만 작동)
+   ========================================== */
+@media (min-width: 769px) {
+    /* PC 테이블 기본 틀 및 너비 고정 모드 */
+    .player-table {
+        width: 100%;
+        border-collapse: collapse;
+        margin-top: 15px;
+        text-align: center;
+        table-layout: fixed; /* 칸 별 비율 지정을 위해 열 고정 모드 사용 */
+    }
+
+    /* 공통 헤더 및 데이터 셀 스타일 */
+    .player-table th, 
+    .player-table td {
+        border: 1px solid #dee2e6;
+        padding: 10px 4px;
+        font-size: 25px; /* 기본 폰트 크기 유지 */
+        vertical-align: middle;
+    }
+
+    .player-table th {
+        background: #f1f3f5;
+        color: #495057;
+    }
+
+    /* [칸 1] 접수일 열 너비 (기존의 절반 수준으로 축소) */
+    .player-table th:nth-child(1),
+    .player-table td:nth-child(1) {
+        width: 8%;
+    }
+
+    /* [칸 2] 이름 열 너비 (기존의 약 90% 수준) */
+    .player-table th:nth-child(2),
+    .player-table td:nth-child(2) {
+        width: 11%;
+    }
+
+    /* [칸 3] 연락처 열 너비 및 입력 상자 (전체 번호 표시 맞춤) */
+    .player-table th:nth-child(3),
+    .player-table td:nth-child(3) {
+        width: 22%;
+    }
+
+    .player-table td:nth-child(3) input {
+        width: 100% !important;
+        font-size: 22px;
+        padding: 6px 2px;
+        text-align: center;
+        box-sizing: border-box;
+    }
+
+    /* [칸 4 & 5] 희망종목, 참가비현황 열 (폰트 크기 2배 확대 및 셀렉트 박스 맞춤) */
+    .player-table th:nth-child(4),
+    .player-table td:nth-child(4),
+    .player-table th:nth-child(5),
+    .player-table td:nth-child(5) {
+        width: 24%;
+    }
+
+    .player-table td:nth-child(4) select,
+    .player-table td:nth-child(5) select {
+        width: 100% !important;
+        font-size: 48px; /* 폰트 크기 약 2배 조절 */
+        height: 70px;   /* 글자 크기에 맞는 셀렉트 박스 높이 */
+        padding: 4px;
+        box-sizing: border-box;
+    }
+
+    /* [칸 6] 수정 버튼 열 너비 (기존의 1.1배) 및 가로 글자 정렬 */
+    .player-table th:nth-child(6),
+    .player-table td:nth-child(6) {
+        width: 11%;
+    }
+
+    .update-btn {
+        padding: 8px 12px;
+        background: #28a745;
+        color: white;
+        border: none;
+        border-radius: 4px;
+        font-weight: bold;
+        cursor: pointer;
+        font-size: 20px;
+        white-space: nowrap; /* 글자가 세로로 줄바꿈되지 않고 가로로 유지되도록 지정 */
+    }
+
+    /* 날짜 표시 방식 (PC에서는 YYYY-MM-DD 전체 표시) */
+    .date-full { 
+        display: inline; 
+        font-size: 24px; 
+        font-weight: normal; 
+    }
+    .date-short { display: none; }
+}
+
+
+/* ==========================================
+   13. 모바일 화면 대응 (768px 이하 카드형 2단 레이아웃)
+   ========================================== */
+@media (max-width: 768px) {
+    /* 검색창 1열로 배치 */
+    .search-form {
+        grid-template-columns: 1fr;
+    }
+    .search-btn-container {
+        grid-column: span 1;
+        flex-direction: column;
+        gap: 10px;
+    }
+    
+    /* 기존 테이블 헤더(th) 숨기기 */
+    .player-table table,
+    .player-table thead,
+    .player-table tbody,
+    .player-table th,
+    .player-table td,
+    .player-table tr {
+        display: block;
+    }
+
+    .player-table thead tr {
+        position: absolute;
+        top: -9999px;
+        left: -9999px;
+    }
+
+    /* 각 선수 항목 카드 틀 */
+    .player-table tbody tr {
+        display: grid;
+        grid-template-columns: 35px 160px 1fr 40px;
+        grid-template-rows: auto auto;
+        border: 2px solid #555;
+        margin-bottom: 12px;
+        background: #fff;
+        border-radius: 6px;
+        overflow: hidden;
+    }
+
+    /* 공통 셀 초기화 */
+    .player-table td {
+        border: 1px solid #ddd;
+        box-sizing: border-box;
+        display: flex;
+        align-items: center;
+    }
+
+    /* 2번 칸(이름) 가운데 정렬 */
+    .player-table td:nth-child(2) {
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        text-align: center;
+    }
+
+    .player-table td:nth-child(2) strong {
+        font-size: 25px;
+        color: #111;
+        text-align: center;
+        display: block;
+        width: 100%;
+    }
+
+    /* ① [칸 1] 접수일 (날짜) 영역 */
+    .player-table td:nth-child(1) {
+        grid-column: 1;
+        grid-row: 1 / span 2;
+        background: #f8f9fa;
+        justify-content: center;
+        text-align: center;
+        padding: 2px 2px;
+    }
+    .date-full { display: none; }
+    .date-short { 
+        display: inline;
+        font-size: 20px;
+        font-weight: bold;
+        color: #333;
+    }
+
+    /* ② [칸 2] 이름 영역 */
+    .player-table td:nth-child(2) {
+        grid-column: 2;
+        grid-row: 1;
+        padding: 3px 3px;
+    }
+
+    /* ③ [칸 3] 연락처 영역 */
+    .player-table td:nth-child(3) {
+        grid-column: 2;
+        grid-row: 2;
+        padding: 3px 3px;
+    }
+    .player-table input[type="text"] {
+        font-size: 20px;
+        height: 40px;
+        width: 100% !important;
+        padding: 2px 4px;
+    }
+
+    /* ④ [칸 4] 희망종목 영역 */
+    .player-table td:nth-child(4) {
+        grid-column: 3;
+        grid-row: 1;
+        padding: 3px 3px;
+    }
+    .player-table td:nth-child(4) select {
+        font-size: 20px;
+        height: 40px;
+        width: 100%;
+        padding: 2px 2px;
+        text-align: left;
+    }
+
+    /* ⑤ [칸 5] 참가비현황 영역 */
+    .player-table td:nth-child(5) {
+        grid-column: 3;
+        grid-row: 2;
+        padding: 2px 2px;
+    }
+    .player-table td:nth-child(5) select {
+        font-size: 16px;
+        height: 35px;
+        width: 100%;
+        padding: 2px 2px;
+        text-align: center;
+    }
+
+    /* ⑥ [칸 6] 수정 버튼 영역 */
+    .player-table td:nth-child(6) {
+        grid-column: 4;
+        grid-row: 1 / span 2;
+        background: #f8f9fa;
+        justify-content: center;
+        padding: 5px 5px;
+    }
+    .update-btn {
+        font-size: 25px;
+        padding: 5px 5px;
+        width: 100%;
+        height: 100%;
+    }
+}
+
+/* 알림 메시지 기본 상자 */
+.alert-msg {
+    padding: 10px;
+    background: #d4edda;
+    color: #155724;
+    border-radius: 4px;
+    margin-bottom: 15px;
+    text-align: center;
+}

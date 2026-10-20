@@ -1,0 +1,191 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{PAGE_TITLE}}</title>
+    <link rel="stylesheet" href="/admin.css">
+    <!-- 입력 폼 수정 제출 함수 -->
+    <script>
+        function submitUpdate(index) {
+            const phoneVal = document.querySelector('input[name="phone_' + index + '"]').value;
+            const eventVal = document.querySelector('select[name="event_' + index + '"]').value;
+            const feeVal = document.querySelector('select[name="fee_' + index + '"]').value;
+
+            document.getElementById('updatedPhone_' + index).value = phoneVal;
+            document.getElementById('updatedEvent_' + index).value = eventVal;
+            document.getElementById('updatedFee_' + index).value = feeVal;
+        }
+    </script>
+</head>
+<body>
+
+    <!-- 1. 로그인 화면 섹션 -->
+    {{#IF_LOGIN_SECTION}}
+    <div class="login-container">
+        <h2>🔒 관리자 로그인</h2>
+        {{ERROR_MSG}}
+        <form action="/admin/login" method="POST">
+            <div class="form-group">
+                <label for="adminName">관리자 이름</label>
+                <input type="text" id="adminName" name="adminName" required placeholder="관리자 이름을 입력하세요">
+            </div>
+            <div class="form-group">
+                <label for="adminPassword">비밀번호</label>
+                <input type="text" id="adminPassword" name="adminPassword" required placeholder="비밀번호를 입력하세요">
+            </div>
+            <button type="submit" class="login-btn">로그인</button>
+        </form>
+        <a href="/" class="back-btn" style="display:block; text-align:center; margin-top:20px; text-decoration:none;">메인으로 돌아가기</a>
+    </div>
+    {{/IF_LOGIN_SECTION}}
+
+    <!-- 2. 대시보드 화면 섹션 -->
+    {{#IF_DASHBOARD_SECTION}}
+    <div class="admin-container">
+        <div class="header-flex" style="display: flex; justify-content: space-between; align-items: center;">
+            <h2>📊 접수 현황</h2>
+            <a href="/" class="back-btn">메인화면</a>
+            <a href="/admin" class="logout-btn">로그아웃</a>
+        </div>
+        <div style="margin-bottom: 3px;">
+            <span class="admin-info">👤 {{CURRENT_ADMIN_NAME}} 님</span>
+            <span class="auth-badge">권한: {{ADMIN_AUTH}}</span>
+        </div>
+
+        {{ALERT_DENIED_HTML}}
+
+        <div style="margin-bottom: 25px; font-size: 22px; font-weight: bold; color: #333;">
+            총 접수 인원: <span style="color: #007BFF;">{{TOTAL_COUNT}} 명</span>
+        </div>
+
+        <div class="section-title">🏊‍♂️ 희망종목별 접수 인원</div>
+        <div class="stat-grid">
+            {{EVENT_CARDS_HTML}}
+        </div>
+
+        <div class="section-title">💳 납부 현황</div>
+        <div class="stat-grid">
+            <a href="{{PAID_CARD_HREF}}" class="stat-card-link">
+                <div class="stat-card paid">
+                    <h4>납부완료</h4>
+                    <div class="number">{{PAID_COUNT}} 명</div>
+                </div>
+            </a>
+            <a href="{{UNPAID_CARD_HREF}}" class="stat-card-link">
+                <div class="stat-card unpaid">
+                    <h4>미납</h4>
+                    <div class="number">{{UNPAID_COUNT}} 명</div>
+                </div>
+            </a>
+            <a href="{{FREE_CARD_HREF}}" class="stat-card-link">
+                <div class="stat-card free">
+                    <h4>무료출전권</h4>
+                    <div class="number">{{FREE_COUNT}} 명</div>
+                </div>
+            </a>
+            <a href="{{UNKNOWN_CARD_HREF}}" class="stat-card-link">
+                <div class="stat-card unknown">
+                    <h4>미확인</h4>
+                    <div class="number">{{UNKNOWN_FEE_COUNT}} 명</div>
+                </div>
+            </a>
+        </div>
+
+        {{ACTION_AREA_HTML}}
+    </div>
+    {{/IF_DASHBOARD_SECTION}}
+
+    <!-- 3. 선수 명단 조회 및 수정 화면 섹션 -->
+    {{#IF_PLAYERS_SECTION}}
+    <div class="admin-container">
+        <div class="header-flex">
+            <div>
+                <h2>📋 선수 명단 조회 및 수정</h2>
+                <span style="font-size: 14px; color: #007BFF; font-weight: bold;">👤 담당 관리자: {{CURRENT_ADMIN_NAME}}</span>
+            </div>
+            <a href="/admin?login=success&adminName={{ENCODED_ADMIN_NAME}}" class="back-btn">⬅ 대시보드로 돌아가기</a>
+        </div>
+
+        {{ALERT_MSG_HTML}}
+
+        <!-- 검색 영역 -->
+        <div class="search-box">
+            <form action="/admin/players" method="GET" class="search-form">
+                <input type="hidden" name="adminName" value="{{CURRENT_ADMIN_NAME}}">
+                <div class="form-group">
+                    <label>이름</label>
+                    <input type="text" name="searchName" value="{{SEARCH_NAME}}" placeholder="선수 이름 입력">
+                </div>
+                
+                <div class="form-group">
+                    <label>연락처4 (뒤 4자리)</label>
+                        <input type="text" name="searchPhone4" value="{{SEARCH_PHONE4}}" maxlength="4" inputmode="numeric" oninput="this.value=this.value.replace(/[^0-9]/g,'')" placeholder="뒤 4자리 입력">
+                </div>
+
+
+
+                <div class="form-group">
+                    <label>희망종목</label>
+                    <select name="searchEvent">
+                        {{EVENT_OPTIONS_HTML}}
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>참가비현황</label>
+                    <select name="searchFee">
+                        <option value="">전체 (모든 상태)</option>
+                        <option value="납부완료" {{FEE_SELECTED_PAID}}>납부완료</option>
+                        <option value="미납" {{FEE_SELECTED_UNPAID}}>미납</option>
+                        <option value="무료출전권" {{FEE_SELECTED_FREE}}>무료출전권</option>
+                        <option value="미확인" {{FEE_SELECTED_UNKNOWN}}>미확인</option>
+                    </select>
+                </div>
+                
+                <!--
+                <div class="search-btn-container">
+                    <div style="text-align: center; width: 100%;">
+                        <button type="submit" class="search-btn">검색하기</button>
+                        <a href="/admin/players?adminName={{ENCODED_ADMIN_NAME}}" style="margin-right: 10px; color: #6c757d; font-size: 30px; text-decoration: none;">조건 초기화</a>
+                        <a href="/admin/download-excel?{{DOWNLOAD_QUERY_STRING}}" class="excel-download-btn">📥 현재 검색결과 엑셀 다운로드</a>
+                    </div>
+                </div> 
+                -->
+
+                
+                <div class="search-btn-container">
+                    <div style="display: flex; flex-direction: column; align-items: center; gap: 20px; width: 100%;">
+                        <button type="submit" class="search-btn">검색하기</button>
+                        <a href="/admin/players?adminName={{ENCODED_ADMIN_NAME}}" style="color: #6c757d; font-size: 30px; text-decoration: none;">조건 초기화</a>
+                        <a href="/admin/download-excel?{{DOWNLOAD_QUERY_STRING}}" class="excel-download-btn">📥 현재 검색결과 엑셀 다운로드</a>
+                    </div>
+                </div>
+
+            </form>
+        </div>
+
+        <div style="font-size: 15px; margin-bottom: 10px; color: #555;">
+            검색 결과: <strong>{{FILTERED_COUNT}}</strong> 건
+        </div>
+
+        <!-- 선수 명단 테이블 (PC: 일반 표, 모바일: 2단 스택 카드) -->
+        <table class="player-table">
+            <thead>
+                <tr>
+                    <th>접수일</th>
+                    <th>이름</th>
+                    <th>연락처</th>
+                    <th>희망종목</th>
+                    <th>참가비현황</th>
+                    <th>수정</th>
+                </tr>
+            </thead>
+            <tbody>
+                {{PLAYER_ROWS_HTML}}
+            </tbody>
+        </table>
+    </div>
+    {{/IF_PLAYERS_SECTION}}
+
+</body>
+</html>

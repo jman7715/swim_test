@@ -1,0 +1,117 @@
+수영대회프로그램 변수명 
+ 
+수영대회 항목별 영문 변수명 매칭표한글 항목명 (엑셀/사용자 화면용)추천 
+
+영문 변수명 (코드용)설명 / 비고
+
+## 대회기본정보 ##
+접수날짜	regDate	최초 접수한 일시
+
+대회명: competitionName
+대회날짜: competitionDate
+대회코드: competitionCode
+
+관리자권한: adminAuth
+관리자이름: adminName
+관리자비번: adminPassword
+
+접수날짜 / 종료날짜: regStartDate, regEndDate
+수정날짜 / 종료날짜: updateStartDate, updateEndDate
+배번공지날짜 / 종료날짜: bibStartDate, bibEndDate
+기록조회날짜 / 종료날짜: recordStartDate, recordEndDate
+
+수정자	    updatedBy	정보를 수정한 사람 (예: 관리자, 또는 수정 주체)
+
+
+## 접수 정보 ## 
+등록순서            regOrder
+이름	            name	선수 성명
+성별	            gender	남/여 구분
+주민등록번호	     ssn (또는 idNumber)	본인 확인 및 보험 가입용
+연락처	            phone	선수 본인 휴대전화 번호
+연락처4	            phone4	본인 확인용 뒤 4자리 (핵심 열쇠)
+참가비현황	        entryFee	납부완료 / 미납 등
+주소	            address	거주지 또는 기념품 배송지
+소속클럽	        club	소속 수영 동호회 또는 팀명
+희망경기	        desiredEvent	1단계 신청 시 희망 종목
+예상기록	    expectedTime	초장거리 기록 예측용
+보호자이름	        guardianName	비상 연락용
+보호자연락처	    guardianPhone	비상 연락용 번호
+질병유무	        medicalNotes	특이 질환 여부 (안전 확인용)
+기념품1	            souvenir1		티셔츠 사이즈 등
+기념품2	            souvenir2		추가 기념품 옵션
+홍보동의여부	  marketingConsent	마케팅/알림 수신 동의 (Y/N)
+기타	            memo	주최측 전달사항 또는 특이사항
+
+
+## 배번공지 + 기록공지 ## 
+이름	    name	선수 성명
+성별	    gender	남/여 구분
+등번호	    backNumber (또는 bibNumber)	선수 배번
+종목	    event	최종 확정된 경기 종목
+경기시간	matchTime  경기시작시간
+등록시간	regTime     등록완료시간
+경기번호	matchNumber	몇 번째 경기인지
+레인번호	laneNumber	배정된 레인 (1~10레인)
+출발순서	startOrder	레인 내 입수 순번
+출발시간	startTime	경기가 선수가 출발한 시각
+출수시간	exitTime		경기가 끝나서 물에서 나온 시각
+완주시간	finishTime	총 소요된 최종 기록
+
+
+## 기록공지 , 순위 세부항목 ## 
+랩타임          
+전체순위        totalRank
+성별순위        genderRank
+연령대순위      ageGroupRank
+선수나이        targetAge
+나이범위        ageRange
+시작나이        minAge
+끝나이          maxAge
+
+// 1. 선수가 설정한 값 (또는 폼을 통해 전달받은 값)
+const targetAge = 53;  // 기준 나이
+const ageRange = 5;    // 위아래 5세 범위
+
+// 2. 최소/최대 나이 계산
+const minAge = targetAge - ageRange; // 48
+const maxAge = targetAge + ageRange; // 58
+
+// 3. 전체 선수 명부에서 해당 나이 범위에 속하는 선수들만 골라내기 (Filtering)
+const filteredParticipants = allParticipants.filter(player => {
+  return player.age >= minAge && player.age <= maxAge;
+});
+
+console.log(`${minAge}세부터 ${maxAge}세까지의 비교 대상 선수를 필터링했습니다.`);
+
+
+
+
+📁 최종 파일 구성 및 역할
+server.js (메인 홈 화면 - 최상위 진입점)
+접수 기간(시작일~마감일) 설정값을 바탕으로 각 버튼 활성화/비활성화 제어
+접수 기간: [접수하기], [등록상황 확인 및 수정] 활성화 / [배번 공지] 비활성화
+접수 마감 후: [접수하기], [등록상황 확인 및 수정] 비활성화 / [배번 공지] 활성화
+
+
+ticket.js (선수용 - 접수 신청)
+참가자 정보 입력 폼, 입력값 검증(하이픈 자동변환, 자릿수 확인 등)
+swimmers.xlsx 파일에 데이터 Persistence(저장) 처리
+
+
+player_check.js (선수용 - 등록상황 확인 및 셀프 수정)
+이름 + 연락처4(연락처 뒤 4자리) 입력 후 조회
+희망경기, 예상기록, 기념품 등 선수 본인이 직접 수정할 수 있는 항목 변경 제공
+
+
+player_bib.js (선수용 - 배번 및 레인/조 공지)
+접수 마감 후, 이름 + 연락처4 입력하여 본인의 배정 조/레인/경기 시간 조회
+
+
+admin.js (관리자 전용 대시보드)
+접수 통계: 현재 총 접수 인원 및 부서/경기별 인원 실시간 카운트
+전체 명단 조회/검색: 이름, 소속, 참가부서 등으로 특정 선수 빠른 검색
+참가비 원클릭 관리: 리스트에서 '미납 / 완납' 클릭 시 즉시 엑셀 데이터에 반영
+대리 수정: 선수 전화 문의 시 희망경기, 예상기록, 기념품 등 대리 수정 (※ 단, 이름/주민번호 오타 수정은 데이터 안전을 위해 원본 엑셀 직접 수정 권장)
+
+
