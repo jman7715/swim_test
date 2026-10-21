@@ -33,6 +33,7 @@ function formatExcelDate(excelDate) {
 function getAllAdminConfigs() {
     try {
         const filePath = path.join(__dirname, 'swimmers.xlsx');
+        if (!fs.existsSync(filePath)) return [];
         const workbook = xlsx.readFile(filePath);
         const sheet = workbook.Sheets['대회정보'];
         if (!sheet) return [];
@@ -78,12 +79,15 @@ function getPlayerSheetHeaders(sheet) {
 }
 
 /**
- * 엑셀 파일에서 '선수명단' 시트를 읽어오는 함수
+ * 엑셀 파일에서 '선수명단' 시트를 안전하게 읽어오는 함수 (보안 강화)
  */
 function getPlayerListAndHeaders() {
     try {
         const filePath = path.join(__dirname, 'swimmers.xlsx');
+        if (!fs.existsSync(filePath)) return { players: [], headers: [] };
+
         const workbook = xlsx.readFile(filePath);
+        // 📌 오직 '선수명단' 시트만 정확하게 지정하여 호출
         const sheet = workbook.Sheets['선수명단'];
         if (!sheet) return { players: [], headers: [] };
 
@@ -124,10 +128,13 @@ function savePlayerList(players, headers) {
 }
 
 /**
- * 단일 admin.html 템플릿에서 특정 섹션만 남기고 데이터를 치환하여 렌더링하는 헬퍼 함수
+ * 템플릿 렌더링 헬퍼 함수
  */
 function renderTemplate(pageTitle, activeSection, data) {
     const templatePath = path.join(__dirname, 'admin.html');
+    if (!fs.existsSync(templatePath)) {
+        return `<h2>admin.html 템플릿 파일을 찾을 수 없습니다.</h2>`;
+    }
     let html = fs.readFileSync(templatePath, 'utf8');
 
     html = html.replace('{{PAGE_TITLE}}', pageTitle);
@@ -186,7 +193,7 @@ router.get('/', (req, res) => {
         eventStats[eventKey] = (eventStats[eventKey] || 0) + 1;
 
         const feeStatus = String(player['참가비현황'] || '').trim();
-        if (feeStatus === '납부완료' || feeStatus === '완납') {
+        if (feeStatus === '납부완료' || feeStatus === '완납' || feeStatus === '입금완료') {
             paidCount++;
         } else if (feeStatus === '미납') {
             unpaidCount++;
@@ -282,19 +289,13 @@ router.get('/players', (req, res) => {
         }
     });
 
+    // 📌 유연한 비교를 통한 선수 필터링
     const filteredPlayers = players.filter(player => {
         if (searchName && !String(player['이름'] || '').includes(searchName)) return false;
-        
-        /*
-        const pPhone = String(player['연락처'] || '');
-        const pPhone4 = String(player['연락처4'] || pPhone.slice(-4));
-        if (searchPhone4 && !pPhone4.includes(searchPhone4) && !pPhone.includes(searchPhone4)) return false;
-        */
 
         const pPhone = String(player['연락처'] || '').replace(/[^0-9]/g, '');
         const pPhone4 = String(player['연락처4'] || '').trim() || pPhone.slice(-4);
-        if (searchPhone4 && pPhone4 !== searchPhone4) return false;
-
+        if (searchPhone4 && !pPhone.includes(searchPhone4) && pPhone4 !== searchPhone4) return false;
 
         const pEvent = String(player['희망종목'] || '').trim();
         if (searchEvent) {
@@ -304,10 +305,11 @@ router.get('/players', (req, res) => {
 
         const pFee = String(player['참가비현황'] || '').trim();
         if (searchFee) {
-            if (searchFee === '납부완료' && !(pFee === '납부완료' || pFee === '완납')) return false;
+            if (searchFee === '납부완료' && !(pFee === '납부완료' || pFee === '완납' || pFee === '입금완료')) return false;
             if (searchFee === '미납' && pFee !== '미납') return false;
             if (searchFee === '무료출전권' && !(pFee === '무료' || pFee === '무료출전권')) return false;
-            if (searchFee === '미확인' && (pFee === '납부완료' || pFee === '완납' || pFee === '미납' || pFee === '무료' || pFee === '무료출전권')) return false;
+            if (searchFee === '환불완료' && !(pFee === '환불완료' || pFee === '취소')) return false;
+            if (searchFee === '미확인' && (pFee === '납부완료' || pFee === '완납' || pFee === '입금완료' || pFee === '미납' || pFee === '무료' || pFee === '무료출전권' || pFee === '환불완료' || pFee === '취소')) return false;
         }
         return true;
     });
@@ -331,68 +333,66 @@ router.get('/players', (req, res) => {
             const rawRegDate = player['접수날짜'] || player['등록시간'] || '';
             const regDate = formatExcelDate(rawRegDate);
 
-            // PC용 전체 날짜 (YYYY-MM-DD)와 모바일용 단축 날짜 (MM/DD) 생성
             let regDateFull = regDate;
             let regDateShort = regDate;
             if (regDate !== '-' && regDate.includes('-')) {
                 const dateParts = regDate.split('-');
                 if (dateParts.length >= 3) {
+                    // 기존 두 줄 표시 구조 유지 (MM<br>DD)
                     regDateShort = `${dateParts[1]}<br>${dateParts[2]}`;
                 }
             }
 
-            let isOver3DaysUnpaid = false;
-            if (regDate !== '-') {
-                const regDateObj = new Date(regDate);
-                regDateObj.setHours(0, 0, 0, 0);
-                const diffDays = (today - regDateObj) / (1000 * 60 * 60 * 24);
-                
-                const currentFeeRaw = String(player['참가비현황'] || '').trim();
-                if (diffDays >= 3 && currentFeeRaw === '미납') {
-                    isOver3DaysUnpaid = true;
-                }
-            }
+            // 📌 참가비 현황 상태 확인
+            const currentFee = String(player['참가비현황'] || '').trim();
+            const isCanceled = currentFee === '환불완료' || currentFee === '취소';
+            const isUnpaid = currentFee === '미납';
 
-            let rowBgColor = '';
-            if (isOver3DaysUnpaid) {
-                rowBgColor = 'background-color: #f8d7da;';
+            // 🎨 [핵심 배경색 로직 수정]
+            // 우선순위 1: 취소자는 짙은 회색 배경 + 취소선 적용
+            // 우선순위 2: 미납자는 옅은 빨강 배경 적용
+            // 우선순위 3: 일반 수영 선수는 3명 단위로 옅은 파랑(#eef6ff)과 백색(#ffffff) 교대
+            let rowStyle = '';
+            if (isCanceled) {
+                rowStyle = 'background-color: #adb5bd; color: #495057; text-decoration: line-through;';
+            } else if (isUnpaid) {
+                rowStyle = 'background-color: #f8d7da;';
             } else {
                 const groupIndex = Math.floor(index / 3);
-                rowBgColor = groupIndex % 2 === 0 ? 'background-color: #ffffff;' : 'background-color: #f2f2f2;';
+                rowStyle = groupIndex % 2 === 0 ? 'background-color: #ffffff;' : 'background-color: #eef6ff;';
             }
 
             const rawEvent = String(player['희망종목'] || '').trim();
             const currentEvent = rawEvent.length > 0 ? rawEvent.substring(0, 7) : '미확인';
-            const currentFee = player['참가비현황'] || '';
 
             let itemEventOptions = '';
             allEventsList.forEach(evt => {
                 itemEventOptions += `<option value="${evt}" ${evt === currentEvent ? 'selected' : ''}>${evt}</option>`;
             });
 
-            const feeList = ['납부완료', '미납', '무료출전권', '미확인'];
+            const feeList = ['납부완료', '미납', '무료출전권', '환불완료', '미확인'];
             let itemFeeOptions = '';
             feeList.forEach(f => {
                 itemFeeOptions += `<option value="${f}" ${f === currentFee ? 'selected' : ''}>${f}</option>`;
             });
 
             playerRowsHtml += `
-                <tr style="${rowBgColor}">
+                <tr style="${rowStyle}">
                     <td>
                         <span class="date-full">${regDateFull}</span>
                         <span class="date-short">${regDateShort}</span>
                     </td>
                     <td><strong>${name}</strong></td>
                     <td>
-                        <input type="text" name="phone_${index}" value="${phone}" style="width: 120px; padding: 4px; text-align: center;">
+                        <input type="text" name="phone_${index}" id="phone_${index}" value="${phone}" style="width: 110px; padding: 4px; text-align: center;" placeholder="취소시 0">
                     </td>
                     <td>
-                        <select name="event_${index}" style="padding: 4px;">
+                        <select name="event_${index}" id="event_${index}" style="padding: 4px;">
                             ${itemEventOptions}
                         </select>
                     </td>
                     <td>
-                        <select name="fee_${index}" style="padding: 4px;">
+                        <select name="fee_${index}" id="fee_${index}" style="padding: 4px;">
                             ${itemFeeOptions}
                         </select>
                     </td>
@@ -455,17 +455,10 @@ router.get('/download-excel', (req, res) => {
 
     const filteredPlayers = players.filter(player => {
         if (searchName && !String(player['이름'] || '').includes(searchName)) return false;
-        
-        /*
-        const pPhone = String(player['연락처'] || '');
-        const pPhone4 = String(player['연락처4'] || pPhone.slice(-4));
-        if (searchPhone4 && !pPhone4.includes(searchPhone4) && !pPhone.includes(searchPhone4)) return false;
-        */
 
         const pPhone = String(player['연락처'] || '').replace(/[^0-9]/g, '');
         const pPhone4 = String(player['연락처4'] || '').trim() || pPhone.slice(-4);
-        if (searchPhone4 && pPhone4 !== searchPhone4) return false;
-        
+        if (searchPhone4 && !pPhone.includes(searchPhone4) && pPhone4 !== searchPhone4) return false;
 
         const pEvent = String(player['희망종목'] || '').trim();
         if (searchEvent) {
@@ -475,10 +468,11 @@ router.get('/download-excel', (req, res) => {
 
         const pFee = String(player['참가비현황'] || '').trim();
         if (searchFee) {
-            if (searchFee === '납부완료' && !(pFee === '납부완료' || pFee === '완납')) return false;
+            if (searchFee === '납부완료' && !(pFee === '납부완료' || pFee === '완납' || pFee === '입금완료')) return false;
             if (searchFee === '미납' && pFee !== '미납') return false;
             if (searchFee === '무료출전권' && !(pFee === '무료' || pFee === '무료출전권')) return false;
-            if (searchFee === '미확인' && (pFee === '납부완료' || pFee === '완납' || pFee === '미납' || pFee === '무료' || pFee === '무료출전권')) return false;
+            if (searchFee === '환불완료' && !(pFee === '환불완료' || pFee === '취소')) return false;
+            if (searchFee === '미확인' && (pFee === '납부완료' || pFee === '완납' || pFee === '입금완료' || pFee === '미납' || pFee === '무료' || pFee === '무료출전권' || pFee === '환불완료' || pFee === '취소')) return false;
         }
         return true;
     });
@@ -519,7 +513,7 @@ router.post('/login', (req, res) => {
     }
 });
 
-// [POST] /admin/update-player - 개별 선수 정보 수정
+// [POST] /admin/update-player - 개별 선수 정보 수정 및 연락처 '0' 입력 시 취소 처리
 router.post('/update-player', (req, res) => {
     const { adminName, name, phone, updatedPhone, updatedEvent, updatedFee } = req.body;
     const adminInfo = getAdminByName(adminName);
@@ -531,16 +525,28 @@ router.post('/update-player', (req, res) => {
 
     const { players, headers } = getPlayerListAndHeaders();
 
-    const playerIndex = players.findIndex(p => 
-        String(p['이름'] || '').trim() === String(name).trim() && 
-        String(p['연락처'] || '').trim() === String(phone).trim()
-    );
+    // 📌 이름과 기존 연락처(숫자만 비교)로 정확한 선수 위치 탐색
+    const rawTargetPhone = String(phone || '').replace(/[^0-9]/g, '');
+    const playerIndex = players.findIndex(p => {
+        const pNameMatches = String(p['이름'] || '').trim() === String(name).trim();
+        const pPhoneRaw = String(p['연락처'] || '').replace(/[^0-9]/g, '');
+        return pNameMatches && (pPhoneRaw === rawTargetPhone || rawTargetPhone === '');
+    });
 
     if (playerIndex !== -1) {
-        players[playerIndex]['연락처'] = updatedPhone;
-        players[playerIndex]['연락처4'] = String(updatedPhone).slice(-4);
-        players[playerIndex]['희망종목'] = updatedEvent;
-        players[playerIndex]['참가비현황'] = updatedFee;
+        const inputPhone = String(updatedPhone || '').trim();
+
+        // 💡 [핵심] 연락처 칸에 '0' 또는 '000' 입력 시 -> 자동으로 '환불완료(취소)' 처리!
+        if (inputPhone === '0' || inputPhone === '000') {
+            players[playerIndex]['연락처'] = '취소됨';
+            players[playerIndex]['연락처4'] = '0000';
+            players[playerIndex]['참가비현황'] = '환불완료';
+        } else {
+            players[playerIndex]['연락처'] = inputPhone;
+            players[playerIndex]['연락처4'] = String(inputPhone).replace(/[^0-9]/g, '').slice(-4);
+            players[playerIndex]['희망종목'] = updatedEvent;
+            players[playerIndex]['참가비현황'] = updatedFee;
+        }
 
         const now = new Date();
         const formattedDate = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')} ${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
@@ -556,3 +562,4 @@ router.post('/update-player', (req, res) => {
 });
 
 module.exports = router;
+

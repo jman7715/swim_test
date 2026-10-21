@@ -2,28 +2,40 @@ const express = require('express');
 const path = require('path');
 const xlsx = require('xlsx');
 
+// 📌 공통 한국 시간(KST) 구하기 도구 함수 불러오기 (서버 타임존 문제 해결용)
+const { getKSTDate } = require('./utils');
+
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// 공통 미들웨어 설정
+// 📌 Express 공통 미들웨어 설정 (POST 요청 데이터 파싱 및 정적 파일 제공)
 app.use(express.urlencoded({ extended: true }));
 app.use(express.json());
 app.use(express.static(path.join(__dirname)));
 
-// 라우터 연결
-const ticketRouter = require('./ticket');           // 1. 참가 접수
-const playerCheckRouter = require('./player_check');   // 2. 조회 및 수정
+// 📌 서비스 라우터 연결
+const ticketRouter = require('./ticket');          // 1. 참가 접수 처리 라우터
+const playerCheckRouter = require('./player_check');   // 2. 등록상황 조회 및 수정 처리 라우터
 
 app.use('/register', ticketRouter);
 app.use('/entry', playerCheckRouter);
 
-// 추후 구현할 라우터들
-const bibRouter = require('./player_bib');      // 배번공지 연결
-app.use('/bib', bibRouter);                     // 배번공지 연결
-const adminRouter = require('./admin');        // 관리자 로그인
-app.use('/admin', adminRouter);                // 관리자 로그인
+// 📌 기타 라우터 연결 (배번 공지 및 관리자 기능)
+const bibRouter = require('./player_bib');          // 3. 배번/레인/조 공지 연결
+app.use('/bib', bibRouter);                    
+const adminRouter = require('./admin');            // 관리자 기능 연결
+app.use('/admin', adminRouter);
 
-// 날짜를 보기 좋게 포맷팅하는 함수 (예: 2026.10.22 13:00)
+// 📌 서버 실행
+/*
+app.listen(PORT, () => {
+  console.log(`🚀 서버가 포트 ${PORT}번에서 실행 중입니다.`);
+});
+*/
+
+/**
+ * 📌 날짜 객체(Date)를 'YYYY.MM.DD HH:mm' 형식의 문자열로 변환하는 헬퍼 함수
+ */
 function formatDateString(dateObj) {
     if (!dateObj || isNaN(dateObj)) return '';
     const year = dateObj.getFullYear();
@@ -34,11 +46,22 @@ function formatDateString(dateObj) {
     return `${year}.${month}.${day} ${hours}:${minutes}`;
 }
 
-// 엑셀 파일에서 대회 설정 정보를 읽어오는 함수
+/**
+ * 📌 엑셀 셀 값을 자바스크립트 Date 객체로 변환하는 헬퍼 함수
+ */
+function parseDate(val) {
+    if (!val) return null;
+    const d = new Date(val);
+    return isNaN(d.getTime()) ? null : d;
+}
+
+/**
+ * 📌 swimmers.xlsx 파일의 '대회정보' 시트에서 대회 기간 및 설정 정보 읽어오는 함수
+ */
 function getCompetitionConfig() {
     try {
         const filePath = path.join(__dirname, 'swimmers.xlsx');
-        const workbook = xlsx.readFile(filePath);
+        const workbook = xlsx.readFile(filePath, { cellDates: true });
         const sheet = workbook.Sheets['대회정보'];
         
         if (!sheet) {
@@ -52,7 +75,7 @@ function getCompetitionConfig() {
             return null;
         }
 
-        const row = data[0]; // 첫 번째 행의 데이터 사용
+        const row = data[0]; // 시트의 첫 번째 행 데이터 가져오기
 
         return {
             competitionName: row['대회명'] || '아쿠아 마라톤 대회',
@@ -61,14 +84,17 @@ function getCompetitionConfig() {
             adminAuth: row['관리자권한'],
             adminName: row['관리자이름'],
             adminPassword: row['관리자비번'],
-            regStartDate: row['접수날짜'] ? new Date(row['접수날짜']) : null,
-            regEndDate: row['접수종료날짜'] ? new Date(row['접수종료날짜']) : null,
-            updateStartDate: row['수정날짜'] ? new Date(row['수정날짜']) : null,
-            updateEndDate: row['수정종료날짜'] ? new Date(row['수정종료날짜']) : null,
-            bibStartDate: row['배번공지날짜'] ? new Date(row['배번공지날짜']) : null,
-            bibEndDate: row['배번공지종료날짜'] ? new Date(row['배번공지종료날짜']) : null,
-            recordStartDate: row['기록조회날짜'] ? new Date(row['기록조회날짜']) : null,
-            recordEndDate: row['기록조회종료날짜'] ? new Date(row['기록조회종료날짜']) : null
+            // 📌 접수 기간 설정
+            regStartDate: parseDate(row['접수날짜']),
+            regEndDate: parseDate(row['접수종료날짜']),
+            // 📌 조회 및 수정 가능 기간 설정 (엑셀 시트 항목명 변경 반영: '조회날짜', '조회종료날짜')
+            updateStartDate: parseDate(row['조회날짜']),
+            updateEndDate: parseDate(row['조회종료날짜']),
+            // 📌 배번 및 기록 조회 기간 설정
+            bibStartDate: parseDate(row['배번공지날짜']),
+            bibEndDate: parseDate(row['배번공지종료날짜']),
+            recordStartDate: parseDate(row['기록조회날짜']),
+            recordEndDate: parseDate(row['기록조회종료날짜'])
         };
     } catch (error) {
         console.error("엑셀 파일 읽기 오류:", error);
@@ -76,23 +102,27 @@ function getCompetitionConfig() {
     }
 }
 
-// 메인 홈 화면 (접수 상태 안내 문구 + 조건부 실시간 시계 + 자동 새로고침)
+/**
+ * 📌 메인 홈 화면 (GET /)
+ * - 한국 시간(KST) 기준으로 접수/수정/배번 조회 버튼의 활성화 상태 판별
+ * - 접수 시작 전일 경우 실시간 시계 및 시작 시 자동 새로고침 처리
+ */
 app.get('/', (req, res) => {
     const config = getCompetitionConfig() || {};
-    const now = new Date(); // 현재 시간
+    const now = getKSTDate(); // 📌 한국 표준시(KST) 기준 현재 시간 계산
 
-    // 각 버튼별 활성화 조건 계산
+    // 📌 각 버튼별 오픈(활성화) 조건 계산
     const isRegOpen = config.regStartDate && config.regEndDate && (now >= config.regStartDate && now <= config.regEndDate);
     const isUpdateOpen = config.updateStartDate && config.updateEndDate && (now >= config.updateStartDate && now <= config.updateEndDate);
     const isBibOpen = config.bibStartDate && config.bibEndDate && (now >= config.bibStartDate && now <= config.bibEndDate);
 
-    // 시계 표시 조건: 접수 시작일 설정이 있고, 현재 시간이 접수 시작일 이전일 때만 표시
+    // 📌 접수 시작 전일 때만 화면에 실시간 시계 표시
     const showClock = config.regStartDate && (now < config.regStartDate);
 
-    // 접수 시작 타임스탬프 (자바스크립트 자동 새로고침용)
+    // 📌 자바스크립트 자동 새로고침 기준 타임스탬프
     const regStartTime = config.regStartDate ? config.regStartDate.getTime() : null;
 
-    // 접수 상태 안내 문구 결정 로직 (대괄호 포함)
+    // 📌 화면 중앙의 접수 상태 안내 문구 및 색상 결정
     let regStatusText = '접수 기간이 아닙니다';
     let regStatusColor = '#dc3545'; // 기본 빨간색
 
@@ -100,12 +130,10 @@ app.get('/', (req, res) => {
         regStatusText = '접수 진행 중입니다';
         regStatusColor = '#28a745'; // 초록색
     } else if (config.regStartDate && now < config.regStartDate) {
-        // 접수 시작 전일 때
         const formattedDate = formatDateString(config.regStartDate);
         regStatusText = `${formattedDate}부터 <br> 접수를 시작합니다.`;
-        regStatusColor = '#eb7405'; // 파란색 (안내 강조)
+        regStatusColor = '#eb7405'; // 주황색
     } else if (config.regEndDate && now > config.regEndDate) {
-        // 접수 마감 후일 때
         regStatusText = '접수가 마감되었습니다.';
         regStatusColor = '#6c757d'; // 회색
     }
@@ -179,25 +207,28 @@ app.get('/', (req, res) => {
                 <h2>${compName}</h2>
                 
                 ${showClock ? `
-                <!-- 접수 시작 이전일 때만 표시되는 실시간 시계 영역 -->
+                <!-- 접수 시작 전 타이머 영역 -->
                 <div id="live-clock" style="font-size: 25px; font-weight: bold; color: #333; margin-bottom: 15px;"></div>
                 ` : ''}
 
-                 <!-- 접수 시작 이전일 때만 표시되는 안내 문구 영역 -->
+                <!-- 접수 상태 및 시작 안내 영역 -->
                 <div class="period-info">
                     <span style="color: ${regStatusColor}; font-size: 22px; font-weight: bold;">
                          ${regStatusText} 
                     </span>
                 </div>
 
+                <!-- 1. 참가 접수 버튼 -->
                 <a href="/register" class="menu-btn ${isRegOpen ? '' : 'disabled'}">
                     1. 참가 접수하기
                 </a>
 
+                <!-- 2. 등록상황 확인 및 수정 버튼 -->
                 <a href="/entry" class="menu-btn ${isUpdateOpen ? '' : 'disabled'}">
                     2. 등록상황 확인 및 수정
                 </a>
 
+                <!-- 3. 배번 공지 확인 버튼 -->
                 <a href="/bib" class="menu-btn ${isBibOpen ? '' : 'disabled'}">
                     3. 배번(레인/조) 공지 확인
                 </a>
@@ -208,16 +239,16 @@ app.get('/', (req, res) => {
             </div>
 
             ${showClock ? `
-            <!-- 실시간 시계 및 자동 새로고침 스크립트 -->
+            <!-- 실시간 시계 업데이트 및 오픈 시 자동 페이지 새로고침 스크립트 -->
             <script>
                 const targetRegTime = ${regStartTime};
 
                 function updateClock() {
                     const now = new Date();
 
-                    // 접수 시작 시간이 되었는지 실시간 체크
+                    // 접수 시작 시간이 경과되면 화면 자동 새로고침(버튼 활성화)
                     if (targetRegTime && now.getTime() >= targetRegTime) {
-                        location.reload(); // 시간이 되면 자동 새로고침
+                        location.reload();
                         return;
                     }
 
@@ -244,6 +275,7 @@ app.get('/', (req, res) => {
     `);
 });
 
+// 📌 포트 대기 실행
 app.listen(PORT, () => {
     console.log(`메인 서버가 실행되었습니다: http://localhost:${PORT}`);
 });

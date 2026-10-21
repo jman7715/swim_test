@@ -4,7 +4,12 @@ const path = require('path');
 const fs = require('fs');
 const router = express.Router();
 
-// 메인 입력 화면 (GET /) -> 조회 폼
+// 📌 공통 한국 시간(KST) 구하기 도구 함수 불러오기
+const { getKSTDate } = require('./utils');
+
+/**
+ * 📌 메인 입력 화면 (GET /entry) -> 신청자 조회 폼
+ */
 router.get('/', (req, res) => {
     res.send(`
         <!DOCTYPE html>
@@ -36,18 +41,23 @@ router.get('/', (req, res) => {
     `);
 });
 
-// 검색 결과 처리 화면 (POST /search)
+/**
+ * 📌 검색 결과 처리 화면 (POST /entry/search)
+ * - 이름과 연락처 뒤 4자리로 선수 조회
+ * - '대회정보' 시트의 '조회날짜'와 '조회종료날짜'를 읽어와 정보 수정 가능 여부를 판단
+ */
 router.post('/search', (req, res) => {
     const inputName = (req.body.name || '').trim();
     const inputPhone4 = (req.body.phone4 || '').trim().padStart(4, '0');
 
     try {
-        const workbook = xlsx.readFile('swimmers.xlsx'); 
+        const workbook = xlsx.readFile('swimmers.xlsx', { cellDates: true }); 
         const sheetName = '선수명단';
         const sheet = workbook.Sheets[sheetName];
         
         const dataRows = sheet ? xlsx.utils.sheet_to_json(sheet) : [];
 
+        // 📌 선수 검색 로직 (이름 및 연락처 뒤 4자리 매칭)
         const foundRow = dataRows.find(row => {
             const rowName = String(row['이름'] || '').trim(); 
             const rawPhone = String(row['연락처'] || row['연락처4'] || '').trim(); 
@@ -69,10 +79,26 @@ router.post('/search', (req, res) => {
             const souvenir1 = foundRow['기념품1'] || ''; 
             const entryFee = foundRow['참가비현황'] || ''; 
 
-            const startDate = new Date('2026-10-01T00:00:00');
-            const endDate = new Date('2026-10-31T23:59:59');
-            const now = new Date();
-            const isEditable = now >= startDate && now <= endDate;
+            // 📌 '대회정보' 시트에서 '조회날짜', '조회종료날짜'를 동적으로 확인하여 수정 가능 여부 판단
+            let isEditable = false;
+            try {
+                const configSheet = workbook.Sheets['대회정보'];
+                if (configSheet) {
+                    const configData = xlsx.utils.sheet_to_json(configSheet);
+                    if (configData.length > 0) {
+                        const row = configData[0];
+                        const startDate = row['조회날짜'] ? new Date(row['조회날짜']) : null;
+                        const endDate = row['조회종료날짜'] ? new Date(row['조회종료날짜']) : null;
+                        const now = getKSTDate();
+                        
+                        if (startDate && endDate) {
+                            isEditable = (now >= startDate && now <= endDate);
+                        }
+                    }
+                }
+            } catch (e) {
+                console.error("수정 가능 기간 확인 오류:", e);
+            }
 
             resultHtml = `
                 <div class="result-box">
@@ -87,7 +113,7 @@ router.post('/search', (req, res) => {
                     <p><strong>참가비현황:</strong> ${entryFee}</p>
                     ${!isEditable ? `
                         <p style="margin-top: 15px; color: #dc3545; font-size: 14px; text-align: center;">
-                            ※ 접수 기간이 마감되어 정보 수정이 불가합니다. (조회 전용)
+                            ※ 접수 정보 수정 기간이 아니므로 조회만 가능합니다.
                         </p>
                     ` : ''}
                 </div>
@@ -127,6 +153,7 @@ router.post('/search', (req, res) => {
             `;
         }
 
+        // 📌 공지사항 파일 읽기
         let noticeText = "등록된 공지사항이 없습니다.";
         try {
             if (fs.existsSync('notice_check.txt')) {
@@ -160,17 +187,16 @@ router.post('/search', (req, res) => {
                     <div class="images">
                         <h3>[ 안내 이미지 ]</h3>
                         
-                        <!-- PC 전용 이미지 (모바일에서는 숨김) -->
+                        <!-- PC 전용 이미지 -->
                         <img src="/info_100.jpg" alt="안내 이미지 1" class="pc-only" onerror="this.style.display='none'">
                         <img src="/info_200.jpg" alt="안내 이미지 2" class="pc-only" onerror="this.style.display='none'">
                         <img src="/info_300.jpg" alt="안내 이미지 3" class="pc-only" onerror="this.style.display='none'">
                         
-                        <!-- 모바일 전용 이미지 (회전 파일 적용, PC에서는 숨김) -->
+                        <!-- 모바일 전용 이미지 -->
                         <img src="/info_101.jpg" alt="안내 이미지 1" class="mobile-only" onerror="this.style.display='none'">
                         <img src="/info_201.jpg" alt="안내 이미지 2" class="mobile-only" onerror="this.style.display='none'">
                         <img src="/info_301.jpg" alt="안내 이미지 3" class="mobile-only" onerror="this.style.display='none'">
                     </div>
-                   </div>
                 </div>
             </body>
             </html>
@@ -188,7 +214,9 @@ router.post('/search', (req, res) => {
     }
 });
 
-// 📌 1. 정보 수정 폼 화면 (GET /entry/edit)
+/**
+ * 📌 1. 정보 수정 폼 화면 (GET /entry/edit)
+ */
 router.get('/edit', (req, res) => {
     const inputName = (req.query.name || '').trim();
     const inputPhone4 = (req.query.phone4 || '').trim();
@@ -236,7 +264,7 @@ router.get('/edit', (req, res) => {
         const souvenirVal = getVal('souvenir1', '기념품1');
         const marketingVal = getVal('marketingConsent', '홍보동의여부');
 
-        // 유연한 값 비교 함수
+        // 📌 라디오 버튼 매칭을 위한 헬퍼 함수
         const checkMatch = (val, target) => {
             const v = String(val || '').trim();
             const t = String(target || '').trim();
@@ -403,7 +431,11 @@ router.get('/edit', (req, res) => {
     }
 });
 
-// 📌 2. 정보 수정 반영 처리 (POST /entry/update)
+/**
+ * 📌 2. 정보 수정 반영 처리 (POST /entry/update)
+ * - 수정 데이터를 입력받아 swimmers.xlsx 파일의 '선수명단' 시트에 반영
+ * - 수정 시점의 한국 표준시(KST)를 '수정날짜' 컬럼에 기록
+ */
 router.post('/update', (req, res) => {
     const getQueryString = (body) => {
         return Object.keys(body)
@@ -453,6 +485,7 @@ router.post('/update', (req, res) => {
 
     const qs = `?name=${encodeURIComponent(originName)}&phone4=${encodeURIComponent(originPhone4)}&error=true&` + getQueryString(req.body);
 
+    // 📌 유효성 검사
     if (!rawPhone) return res.send(`<script>alert('연락처를 입력해 주세요.'); window.location.href='/entry/edit${qs}';</script>`);
     if (hasClub === 'yes' && !club) return res.send(`<script>alert('소속클럽명을 입력해 주세요.'); window.location.href='/entry/edit${qs}';</script>`);
     if (!desiredEvent) return res.send(`<script>alert('희망종목를 선택해 주세요.'); window.location.href='/entry/edit${qs}';</script>`);
@@ -488,9 +521,11 @@ router.post('/update', (req, res) => {
         });
 
         if (index !== -1) {
-            const now = new Date();
+            // 📌 한국 표준시(KST) 기준 수정 날짜 문자열 생성
+            const now = getKSTDate();
             const updateDateStr = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-${String(now.getDate()).padStart(2,'0')} ${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')}:${String(now.getSeconds()).padStart(2,'0')}`;
 
+            // 📌 선수 정보 갱신
             dataRows[index]['연락처'] = phone;
             dataRows[index]['연락처4'] = phone4;
             dataRows[index]['주소'] = address;
@@ -503,6 +538,7 @@ router.post('/update', (req, res) => {
             dataRows[index]['기념품1'] = souvenir1;
             dataRows[index]['홍보동의여부'] = marketingConsent;
 
+            // 📌 선수명단 시트의 '수정날짜' 및 '수정자' 열에 시점 데이터 기록
             dataRows[index]['수정날짜'] = updateDateStr;
             dataRows[index]['수정자'] = '선수';
 
