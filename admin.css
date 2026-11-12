@@ -663,3 +663,86 @@ button:active {
     margin-bottom: 15px;
     text-align: center;
 }
+
+
+
+/* 접수 마감 모달 전체 오버레이 배경 */
+#closedModal {
+    display: flex;
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background-color: rgba(0, 0, 0, 0.7);
+    z-index: 9999;
+    justify-content: center;
+    align-items: center;
+}
+
+/* 모달 본체 박스 (빨간색 배경) */
+.closed-modal-content {
+    background-color: #dc3545;
+    color: #ffffff;
+    padding: 30px;
+    border-radius: 15px;
+    width: 90%;
+    max-width: 420px;
+    text-align: center;
+    box-shadow: 0 10px 25px rgba(0,0,0,0.5);
+    font-family: 'Noto Sans KR', sans-serif;
+}
+
+/* 모달 제목 스타일 */
+.closed-modal-title {
+    margin-top: 0;
+    margin-bottom: 20px;
+    font-size: 26px;
+    font-weight: bold;
+    border-bottom: 2px solid rgba(255,255,255,0.3);
+    padding-bottom: 12px;
+}
+
+/* 인원 현황 정보 박스 */
+.closed-modal-stats {
+    font-size: 18px;
+    line-height: 1.8;
+    text-align: left;
+    background-color: rgba(0, 0, 0, 0.15);
+    padding: 18px;
+    border-radius: 10px;
+    margin-bottom: 25px;
+}
+
+/* 전체인원 강조 텍스트 */
+.closed-modal-total {
+    margin: 4px 0;
+    font-weight: bold;
+    font-size: 19px;
+    color: #ffeb3b;
+}
+
+/* 내부 구분선 */
+.closed-modal-divider {
+    border: 0;
+    border-top: 1px solid rgba(255,255,255,0.3);
+    margin: 10px 0;
+}
+
+/* 부별 인원 텍스트 */
+.closed-modal-stat-item {
+    margin: 4px 0;
+}
+
+/* 확인 버튼 스타일 */
+.closed-modal-btn {
+    background-color: #ffffff;
+    color: #dc3545;
+    border: none;
+    padding: 12px 35px;
+    font-size: 18px;
+    font-weight: bold;
+    border-radius: 8px;
+    cursor: pointer;
+    transition: 0.2s;
+}

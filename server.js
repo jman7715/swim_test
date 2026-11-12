@@ -1,6 +1,11 @@
 const express = require('express');
 const path = require('path');
-const xlsx = require('xlsx');
+const fs = require('fs'); // 📌 config.json 파일을 읽기 위해 추가된 모듈
+
+// 📌 Supabase 연결 설정 추가
+const supabase = require('./supabase');
+
+
 
 // 📌 공통 한국 시간(KST) 구하기 도구 함수 불러오기 (서버 타임존 문제 해결용)
 const { getKSTDate } = require('./utils');
@@ -22,16 +27,9 @@ app.use('/entry', playerCheckRouter);
 
 // 📌 기타 라우터 연결 (배번 공지 및 관리자 기능)
 const bibRouter = require('./player_bib');          // 3. 배번/레인/조 공지 연결
-app.use('/bib', bibRouter);                    
+app.use('/bib', bibRouter);                        
 const adminRouter = require('./admin');            // 관리자 기능 연결
 app.use('/admin', adminRouter);
-
-// 📌 서버 실행
-/*
-app.listen(PORT, () => {
-  console.log(`🚀 서버가 포트 ${PORT}번에서 실행 중입니다.`);
-});
-*/
 
 /**
  * 📌 날짜 객체(Date)를 'YYYY.MM.DD HH:mm' 형식의 문자열로 변환하는 헬퍼 함수
@@ -47,7 +45,7 @@ function formatDateString(dateObj) {
 }
 
 /**
- * 📌 엑셀 셀 값을 자바스크립트 Date 객체로 변환하는 헬퍼 함수
+ * 📌 날짜 문자열을 자바스크립트 Date 객체로 변환하는 헬퍼 함수
  */
 function parseDate(val) {
     if (!val) return null;
@@ -56,48 +54,41 @@ function parseDate(val) {
 }
 
 /**
- * 📌 swimmers.xlsx 파일의 '대회정보' 시트에서 대회 기간 및 설정 정보 읽어오는 함수
+ * 📌 config.json 파일에서 대회 기간 및 설정 정보 읽어오는 함수
  */
 function getCompetitionConfig() {
     try {
-        const filePath = path.join(__dirname, 'swimmers.xlsx');
-        const workbook = xlsx.readFile(filePath, { cellDates: true });
-        const sheet = workbook.Sheets['대회정보'];
+        const filePath = path.join(__dirname, 'config.json');
         
-        if (!sheet) {
-            console.error("'대회정보' 시트를 찾을 수 없습니다.");
+        if (!fs.existsSync(filePath)) {
+            console.error("config.json 파일을 찾을 수 없습니다.");
             return null;
         }
 
-        const data = xlsx.utils.sheet_to_json(sheet);
-        if (data.length === 0) {
-            console.error("'대회정보' 시트에 데이터가 없습니다.");
-            return null;
-        }
-
-        const row = data[0]; // 시트의 첫 번째 행 데이터 가져오기
+        const fileData = fs.readFileSync(filePath, 'utf8');
+        const row = JSON.parse(fileData);
 
         return {
-            competitionName: row['대회명'] || '아쿠아 마라톤 대회',
-            competitionDate: row['대회날짜'],
-            competitionCode: row['대회코드'],
-            adminAuth: row['관리자권한'],
-            adminName: row['관리자이름'],
-            adminPassword: row['관리자비번'],
+            competitionName: row['competitionName'] || '아쿠아 마라톤 대회',
+            competitionDate: row['competitionDate'],
+            competitionCode: row['competitionCode'],
+            adminAuth: row['admins'], // 관리자 배열 그대로 전달
+            adminName: row['adminName'],
+            adminPassword: row['adminPassword'],
             // 📌 접수 기간 설정
-            regStartDate: parseDate(row['접수날짜']),
-            regEndDate: parseDate(row['접수종료날짜']),
-            // 📌 조회 및 수정 가능 기간 설정 (엑셀 시트 항목명 변경 반영: '조회날짜', '조회종료날짜')
-            updateStartDate: parseDate(row['조회날짜']),
-            updateEndDate: parseDate(row['조회종료날짜']),
+            regStartDate: parseDate(row['regStartDate']),
+            regEndDate: parseDate(row['regEndDate']),
+            // 📌 조회 및 수정 가능 기간 설정 (config.json의 checkStartDate/checkEndDate 매핑)
+            updateStartDate: parseDate(row['checkStartDate']),
+            updateEndDate: parseDate(row['checkEndDate']),
             // 📌 배번 및 기록 조회 기간 설정
-            bibStartDate: parseDate(row['배번공지날짜']),
-            bibEndDate: parseDate(row['배번공지종료날짜']),
-            recordStartDate: parseDate(row['기록조회날짜']),
-            recordEndDate: parseDate(row['기록조회종료날짜'])
+            bibStartDate: parseDate(row['bibStartDate']),
+            bibEndDate: parseDate(row['bibEndDate']),
+            recordStartDate: parseDate(row['recordStartDate']),
+            recordEndDate: parseDate(row['recordEndDate'])
         };
     } catch (error) {
-        console.error("엑셀 파일 읽기 오류:", error);
+        console.error("config.json 파일 읽기 오류:", error);
         return null;
     }
 }
@@ -134,7 +125,7 @@ app.get('/', (req, res) => {
         regStatusText = `${formattedDate}부터 <br> 접수를 시작합니다.`;
         regStatusColor = '#eb7405'; // 주황색
     } else if (config.regEndDate && now > config.regEndDate) {
-        regStatusText = '접수가 마감되었습니다.';
+        regStatusText = '관리자의 확인이 필요 합니다..';
         regStatusColor = '#6c757d'; // 회색
     }
 
@@ -279,3 +270,5 @@ app.get('/', (req, res) => {
 app.listen(PORT, () => {
     console.log(`메인 서버가 실행되었습니다: http://localhost:${PORT}`);
 });
+
+

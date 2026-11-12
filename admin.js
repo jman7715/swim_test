@@ -4,8 +4,14 @@ const path = require('path');
 const fs = require('fs');
 const xlsx = require('xlsx');
 
+// 📌 수파베이스 클라이언트 연결 설정
+const supabase = require('./supabase');
+
+// 📌 공통 한국 시간(KST) 구하기 도구 함수 불러오기
+const { getKSTDate } = require('./utils');
+
 /**
- * 엑셀 날짜(일련번호 수치 또는 문자열)를 YYYY-MM-DD 포맷으로 변환하는 함수
+ * 날짜 포맷 변환 함수 (YYYY-MM-DD)
  */
 function formatExcelDate(excelDate) {
     if (!excelDate) return '-';
@@ -28,24 +34,61 @@ function formatExcelDate(excelDate) {
 }
 
 /**
- * '대회정보' 시트에서 모든 관리자 목록을 읽어오는 함수
+ * 📌 config.json 파일에서 전체 토탈 제한인원을 읽어오는 함수
+ */
+function getTotalMaxParticipantsConfig() {
+    try {
+        const filePath = path.join(__dirname, 'config.json');
+        if (!fs.existsSync(filePath)) return 0;
+        const fileData = fs.readFileSync(filePath, 'utf8');
+        const config = JSON.parse(fileData);
+        return Number(config['totalMaxParticipants'] || 0);
+    } catch (error) {
+        console.error("config.json totalMaxParticipants 읽기 오류:", error);
+        return 0;
+    }
+}
+
+/**
+ * 📌 config.json 파일에서 모든 관리자 목록을 읽어오는 함수
  */
 function getAllAdminConfigs() {
     try {
-        const filePath = path.join(__dirname, 'swimmers.xlsx');
+        const filePath = path.join(__dirname, 'config.json');
         if (!fs.existsSync(filePath)) return [];
-        const workbook = xlsx.readFile(filePath);
-        const sheet = workbook.Sheets['대회정보'];
-        if (!sheet) return [];
+        const fileData = fs.readFileSync(filePath, 'utf8');
+        const row = JSON.parse(fileData);
 
-        const data = xlsx.utils.sheet_to_json(sheet);
-        return data.map(row => ({
-            adminName: String(row['관리자이름'] || row['adminName'] || '').trim(),
-            adminPassword: String(row['관리자비번'] || row['adminPassword'] || '').trim(),
-            adminAuth: String(row['관리자권한'] || row['adminAuth'] || '보기').trim()
+        const admins = row['admins'] || [];
+        return admins.map(admin => ({
+            adminName: String(admin['adminName'] || '').trim(),
+            adminPassword: String(admin['adminPassword'] || '').trim(),
+            adminAuth: String(admin['adminAuth'] || '보기').trim()
         })).filter(admin => admin.adminName !== '');
     } catch (error) {
-        console.error("관리자 설정 엑셀 읽기 오류:", error);
+        console.error("관리자 설정 config.json 읽기 오류:", error);
+        return [];
+    }
+}
+
+/**
+ * 📌 config.json 파일에서 모든 종목 및 제한인원 목록을 읽어오는 함수
+ */
+function getEventConfigs() {
+    try {
+        const filePath = path.join(__dirname, 'config.json');
+        if (!fs.existsSync(filePath)) return [];
+        const fileData = fs.readFileSync(filePath, 'utf8');
+        const row = JSON.parse(fileData);
+
+        const events = row['events'] || [];
+        return events.map(ev => ({
+            eventName: String(ev['eventName'] || '').trim(),
+            maxParticipants: Number(ev['maxParticipants'] || 0),
+            entryFee: Number(ev['entryFee'] || 0)
+        })).filter(ev => ev.eventName !== '');
+    } catch (error) {
+        console.error("config.json 종목 읽기 오류:", error);
         return [];
     }
 }
@@ -60,70 +103,22 @@ function getAdminByName(adminName) {
 }
 
 /**
- * 엑셀 파일에서 원래 헤더(열 순서) 정보 추출하는 함수
+ * 📌 수파베이스 swimmers 테이블에서 전체 선수 데이터 가져오는 헬퍼 함수
  */
-function getPlayerSheetHeaders(sheet) {
-    if (!sheet || !sheet['!ref']) return [];
-    
-    const range = xlsx.utils.decode_range(sheet['!ref']);
-    const headers = [];
-
-    for (let c = range.s.c; c <= range.e.c; c++) {
-        const cellAddress = xlsx.utils.encode_cell({ r: range.s.r, c: c });
-        const cell = sheet[cellAddress];
-        if (cell && cell.v !== undefined) {
-            headers.push(String(cell.v).trim());
-        }
-    }
-    return headers;
-}
-
-/**
- * 엑셀 파일에서 '선수명단' 시트를 안전하게 읽어오는 함수 (보안 강화)
- */
-function getPlayerListAndHeaders() {
+async function getPlayerListFromSupabase() {
     try {
-        const filePath = path.join(__dirname, 'swimmers.xlsx');
-        if (!fs.existsSync(filePath)) return { players: [], headers: [] };
+        const { data, error } = await supabase
+            .from('swimmers')
+            .select('*');
 
-        const workbook = xlsx.readFile(filePath);
-        // 📌 오직 '선수명단' 시트만 정확하게 지정하여 호출
-        const sheet = workbook.Sheets['선수명단'];
-        if (!sheet) return { players: [], headers: [] };
-
-        const headers = getPlayerSheetHeaders(sheet);
-        const players = xlsx.utils.sheet_to_json(sheet, { defval: '' });
-
-        return { players, headers };
-    } catch (error) {
-        console.error("선수 명단 엑셀 읽기 오류:", error);
-        return { players: [], headers: [] };
-    }
-}
-
-/**
- * 수정된 '선수명단' 데이터를 엑셀 파일에 안전하게 저장하는 함수
- */
-function savePlayerList(players, headers) {
-    try {
-        const filePath = path.join(__dirname, 'swimmers.xlsx');
-        const workbook = xlsx.readFile(filePath);
-
-        let headerOption = headers;
-        if (!headerOption || headerOption.length === 0) {
-            if (players.length > 0) {
-                headerOption = Object.keys(players[0]);
-            }
+        if (error) {
+            console.error("수파베이스 선수 목록 읽기 오류:", error);
+            return [];
         }
-
-        const newSheet = xlsx.utils.json_to_sheet(players, { header: headerOption });
-
-        workbook.Sheets['선수명단'] = newSheet;
-        xlsx.writeFile(workbook, filePath);
-        return true;
+        return data || [];
     } catch (error) {
-        console.error("선수 명단 엑셀 저장 오류:", error);
-        return false;
+        console.error("수파베이스 읽기 예외 오류:", error);
+        return [];
     }
 }
 
@@ -159,8 +154,8 @@ function renderTemplate(pageTitle, activeSection, data) {
     return html;
 }
 
-// [GET] /admin - 대시보드 메인 화면 (또는 로그인 화면)
-router.get('/', (req, res) => {
+// [GET] /admin - 대시보드 메인 화면
+router.get('/', async (req, res) => {
     const isLoggedIn = req.query.login === 'success';
     const currentAdminName = String(req.query.adminName || '').trim();
 
@@ -175,34 +170,57 @@ router.get('/', (req, res) => {
     const adminInfo = getAdminByName(currentAdminName);
     const adminAuth = adminInfo ? adminInfo.adminAuth : '보기';
 
-    const { players } = getPlayerListAndHeaders();
+    const players = await getPlayerListFromSupabase();
+    const eventConfigs = getEventConfigs();
+    const totalMax = getTotalMaxParticipantsConfig();
     const totalCount = players.length;
 
     const eventStats = {};
+    eventConfigs.forEach(ec => {
+        eventStats[ec.eventName] = { total: 0, paid: 0 };
+    });
+
     let paidCount = 0;
     let unpaidCount = 0;
     let freeCount = 0;
+    let canceledCount = 0;
     let unknownFeeCount = 0;
 
     players.forEach(player => {
-        const rawEvent = String(player['희망종목'] || '').trim();
-        let eventKey = '미확인';
-        if (rawEvent.length > 0) {
-            eventKey = rawEvent.substring(0, 7);
-        }
-        eventStats[eventKey] = (eventStats[eventKey] || 0) + 1;
+        const feeStatus = String(player['entry_fee_status'] || '').trim();
+        const phoneVal = String(player['phone'] || '').trim();
+        
+        const isCanceled = feeStatus === '취소' || feeStatus === '환불완료' || phoneVal === '환불완료' || phoneVal === '취소됨';
 
-        const feeStatus = String(player['참가비현황'] || '').trim();
-        if (feeStatus === '납부완료' || feeStatus === '완납' || feeStatus === '입금완료') {
-            paidCount++;
-        } else if (feeStatus === '미납') {
-            unpaidCount++;
-        } else if (feeStatus === '무료' || feeStatus === '무료출전권') {
-            freeCount++;
+        if (isCanceled) {
+            canceledCount++;
         } else {
-            unknownFeeCount++;
+            const rawEvent = String(player['desired_event'] || '').trim();
+            const matchedConfig = eventConfigs.find(ec => ec.eventName === rawEvent) || 
+                                  eventConfigs.find(ec => rawEvent.includes(ec.eventName));
+            const eventKey = matchedConfig ? matchedConfig.eventName : (rawEvent || '미확인');
+
+            if (!eventStats[eventKey]) {
+                eventStats[eventKey] = { total: 0, paid: 0 };
+            }
+
+            eventStats[eventKey].total++;
+
+            const isPaid = (feeStatus === '입금완료' || feeStatus === '완납');
+            if (isPaid) {
+                eventStats[eventKey].paid++;
+                paidCount++;
+            } else if (feeStatus === '미입금') {
+                unpaidCount++;
+            } else if (feeStatus === '무료' || feeStatus === '무료출전권') {
+                freeCount++;
+            } else {
+                unknownFeeCount++;
+            }
         }
     });
+
+    const activeTotalCount = totalCount - canceledCount;
 
     const sortedEventEntries = Object.entries(eventStats).sort((a, b) => {
         if (a[0] === '미확인') return 1;
@@ -212,13 +230,16 @@ router.get('/', (req, res) => {
 
     let eventCardsHtml = '';
     if (sortedEventEntries.length > 0) {
-        for (const [eventName, count] of sortedEventEntries) {
+        for (const [eventName, stats] of sortedEventEntries) {
             const cardHref = adminAuth === '보기' ? '#' : `/admin/players?adminName=${encodeURIComponent(currentAdminName)}&searchEvent=${encodeURIComponent(eventName)}`;
+            const shortEventName = eventName.length > 3 ? eventName.substring(0, 3) : eventName;
+
             eventCardsHtml += `
                 <a href="${cardHref}" class="stat-card-link">
                     <div class="stat-card event-card">
-                        <h4>${eventName}</h4>
-                        <div class="number">${count} 명</div>
+                        <h4 title="${eventName}">${shortEventName}</h4>
+                        <div class="number">전체: ${stats.total} 명</div>
+                        <div class="sub-number" style="font-size: 0.9rem; color: #2b8a3e; margin-top: 4px;">입금완료: ${stats.paid} 명</div>
                     </div>
                 </a>
             `;
@@ -242,17 +263,55 @@ router.get('/', (req, res) => {
         `;
     }
 
-    const alertDeniedHtml = req.query.denied ? '<div class="alert-denied">⚠️ 해당 기능에 접근할 수 있는 권한이 없습니다. (현재 권한: 보기)</div>' : '';
+    let closedModalHtml = '';
+    if (totalMax > 0 && paidCount >= totalMax) {
+        let ev1Paid = 0, ev2Paid = 0, ev3Paid = 0, ev4Paid = 0;
+        
+        for (const [eName, stats] of Object.entries(eventStats)) {
+            if (eName === '1부' || eName.startsWith('1부 ')) ev1Paid += stats.paid;
+            else if (eName === '2부' || eName.startsWith('2부 ')) ev2Paid += stats.paid;
+            else if (eName === '3부' || eName.startsWith('3부 ')) ev3Paid += stats.paid;
+            else if (eName === '4부' || eName.startsWith('4부 ')) ev4Paid += stats.paid;
+        }
+
+        closedModalHtml = `
+            <div id="closedModal" style="display: flex; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background-color: rgba(0, 0, 0, 0.7); z-index: 9999; justify-content: center; align-items: center;">
+                <div style="background-color: #dc3545; color: #ffffff; padding: 30px; border-radius: 15px; width: 90%; max-width: 420px; text-align: center; box-shadow: 0 10px 25px rgba(0,0,0,0.5); font-family: 'Noto Sans KR', sans-serif;">
+                    <h2 style="margin-top: 0; margin-bottom: 20px; font-size: 26px; font-weight: bold; border-bottom: 2px solid rgba(255,255,255,0.3); padding-bottom: 12px;">
+                        🚨 접수를 마감 합니다.
+                    </h2>
+                    
+                    <div style="font-size: 18px; line-height: 1.8; text-align: left; background-color: rgba(0, 0, 0, 0.15); padding: 18px; border-radius: 10px; margin-bottom: 25px;">
+                        <p style="margin: 4px 0; font-weight: bold; font-size: 19px; color: #ffeb3b;">전체인원 ${paidCount}명</p>
+                        <hr style="border: 0; border-top: 1px solid rgba(255,255,255,0.3); margin: 10px 0;">
+                        <p style="margin: 4px 0;">1부 ${ev1Paid}명</p>
+                        <p style="margin: 4px 0;">2부 ${ev2Paid}명</p>
+                        <p style="margin: 4px 0;">3부 ${ev3Paid}명</p>
+                        <p style="margin: 4px 0;">4부 ${ev4Paid}명</p>
+                    </div>
+
+                    <button onclick="document.getElementById('closedModal').style.display='none'" style="background-color: #ffffff; color: #dc3545; border: none; padding: 12px 35px; font-size: 18px; font-weight: bold; border-radius: 8px; cursor: pointer; transition: 0.2s;">
+                        확인
+                    </button>
+                </div>
+            </div>
+        `;
+    }
+
+    const alertDeniedHtml = req.query.denied ? '<div class="alert-denied">⚠️ 해당 기능에 접근할 수 없습니다. (현재 권한: 보기)</div>' : '';
 
     const html = renderTemplate('관리자 대시보드', 'DASHBOARD_SECTION', {
         CURRENT_ADMIN_NAME: currentAdminName,
         ADMIN_AUTH: adminAuth,
-        ALERT_DENIED_HTML: alertDeniedHtml,
+        ALERT_DENIED_HTML: alertDeniedHtml + closedModalHtml,
         TOTAL_COUNT: totalCount,
+        CANCELED_COUNT: canceledCount,
+        ACTIVE_TOTAL_COUNT: activeTotalCount,
+        CANCELED_CARD_HREF: adminAuth === '보기' ? '#' : `/admin/players?adminName=${encodeURIComponent(currentAdminName)}&searchFee=환불완료`,
         EVENT_CARDS_HTML: eventCardsHtml,
-        PAID_CARD_HREF: adminAuth === '보기' ? '#' : `/admin/players?adminName=${encodeURIComponent(currentAdminName)}&searchFee=납부완료`,
+        PAID_CARD_HREF: adminAuth === '보기' ? '#' : `/admin/players?adminName=${encodeURIComponent(currentAdminName)}&searchFee=입금완료`,
         PAID_COUNT: paidCount,
-        UNPAID_CARD_HREF: adminAuth === '보기' ? '#' : `/admin/players?adminName=${encodeURIComponent(currentAdminName)}&searchFee=미납`,
+        UNPAID_CARD_HREF: adminAuth === '보기' ? '#' : `/admin/players?adminName=${encodeURIComponent(currentAdminName)}&searchFee=미입금`,
         UNPAID_COUNT: unpaidCount,
         FREE_CARD_HREF: adminAuth === '보기' ? '#' : `/admin/players?adminName=${encodeURIComponent(currentAdminName)}&searchFee=무료출전권`,
         FREE_COUNT: freeCount,
@@ -265,7 +324,7 @@ router.get('/', (req, res) => {
 });
 
 // [GET] /admin/players - 선수 목록 및 수정 화면
-router.get('/players', (req, res) => {
+router.get('/players', async (req, res) => {
     const currentAdminName = String(req.query.adminName || '').trim();
     const adminInfo = getAdminByName(currentAdminName);
     const adminAuth = adminInfo ? adminInfo.adminAuth : '보기';
@@ -274,7 +333,8 @@ router.get('/players', (req, res) => {
         return res.redirect(`/admin?login=success&adminName=${encodeURIComponent(currentAdminName)}&denied=1`);
     }
 
-    const { players } = getPlayerListAndHeaders();
+    const players = await getPlayerListFromSupabase();
+    const eventConfigs = getEventConfigs();
 
     const searchName = String(req.query.searchName || '').trim();
     const searchPhone4 = String(req.query.searchPhone4 || '').trim();
@@ -282,34 +342,37 @@ router.get('/players', (req, res) => {
     const searchFee = String(req.query.searchFee || '').trim();
 
     const allEventsSet = new Set();
+    eventConfigs.forEach(ec => allEventsSet.add(ec.eventName));
     players.forEach(p => {
-        const rawEvt = String(p['희망종목'] || '').trim();
+        const rawEvt = String(p['desired_event'] || '').trim();
         if (rawEvt.length > 0) {
-            allEventsSet.add(rawEvt.substring(0, 7));
+            allEventsSet.add(rawEvt);
         }
     });
 
-    // 📌 유연한 비교를 통한 선수 필터링
     const filteredPlayers = players.filter(player => {
-        if (searchName && !String(player['이름'] || '').includes(searchName)) return false;
+        if (searchName && !String(player['name'] || '').includes(searchName)) return false;
 
-        const pPhone = String(player['연락처'] || '').replace(/[^0-9]/g, '');
-        const pPhone4 = String(player['연락처4'] || '').trim() || pPhone.slice(-4);
+        const pPhone = String(player['phone'] || '').replace(/[^0-9]/g, '');
+        const pPhone4 = String(player['phone4'] || '').trim() || pPhone.slice(-4);
         if (searchPhone4 && !pPhone.includes(searchPhone4) && pPhone4 !== searchPhone4) return false;
 
-        const pEvent = String(player['희망종목'] || '').trim();
+        const pEvent = String(player['desired_event'] || '').trim();
         if (searchEvent) {
             if (searchEvent === '미확인' && pEvent.length > 0) return false;
-            if (searchEvent !== '미확인' && !pEvent.startsWith(searchEvent)) return false;
+            if (searchEvent !== '미확인' && !pEvent.includes(searchEvent) && !searchEvent.includes(pEvent)) return false;
         }
 
-        const pFee = String(player['참가비현황'] || '').trim();
+        const pFee = String(player['entry_fee_status'] || '').trim();
+        const pPhoneVal = String(player['phone'] || '').trim();
+        const isPlayerCanceled = pFee === '취소' || pFee === '환불완료' || pPhoneVal === '환불완료' || pPhoneVal === '취소됨';
+
         if (searchFee) {
-            if (searchFee === '납부완료' && !(pFee === '납부완료' || pFee === '완납' || pFee === '입금완료')) return false;
-            if (searchFee === '미납' && pFee !== '미납') return false;
+            if (searchFee === '입금완료' && !(pFee === '입금완료' || pFee === '완납')) return false;
+            if (searchFee === '미입금' && pFee !== '미입금') return false;
             if (searchFee === '무료출전권' && !(pFee === '무료' || pFee === '무료출전권')) return false;
-            if (searchFee === '환불완료' && !(pFee === '환불완료' || pFee === '취소')) return false;
-            if (searchFee === '미확인' && (pFee === '납부완료' || pFee === '완납' || pFee === '입금완료' || pFee === '미납' || pFee === '무료' || pFee === '무료출전권' || pFee === '환불완료' || pFee === '취소')) return false;
+            if ((searchFee === '환불완료' || searchFee === '취소') && !isPlayerCanceled) return false;
+            if (searchFee === '미확인' && (pFee === '입금완료' || pFee === '완납' || pFee === '미입금' || pFee === '무료' || pFee === '무료출전권' || isPlayerCanceled)) return false;
         }
         return true;
     });
@@ -323,14 +386,11 @@ router.get('/players', (req, res) => {
 
     let playerRowsHtml = '';
     if (filteredPlayers.length > 0) {
-        const today = new Date();
-        today.setHours(0, 0, 0, 0);
-
         filteredPlayers.forEach((player, index) => {
-            const name = player['이름'] || '';
-            const phone = player['연락처'] || '';
+            const name = player['name'] || '';
+            const phone = player['phone'] || '';
 
-            const rawRegDate = player['접수날짜'] || player['등록시간'] || '';
+            const rawRegDate = player['registered_at'] || player['checkin_time'] || '';
             const regDate = formatExcelDate(rawRegDate);
 
             let regDateFull = regDate;
@@ -338,23 +398,18 @@ router.get('/players', (req, res) => {
             if (regDate !== '-' && regDate.includes('-')) {
                 const dateParts = regDate.split('-');
                 if (dateParts.length >= 3) {
-                    // 기존 두 줄 표시 구조 유지 (MM<br>DD)
                     regDateShort = `${dateParts[1]}<br>${dateParts[2]}`;
                 }
             }
 
-            // 📌 참가비 현황 상태 확인
-            const currentFee = String(player['참가비현황'] || '').trim();
-            const isCanceled = currentFee === '환불완료' || currentFee === '취소';
-            const isUnpaid = currentFee === '미납';
+            const currentFee = String(player['entry_fee_status'] || '').trim();
+            const phoneVal = String(player['phone'] || '').trim();
+            const isCanceled = currentFee === '취소' || currentFee === '환불완료' || phoneVal === '환불완료' || phoneVal === '취소됨';
+            const isUnpaid = currentFee === '미입금';
 
-            // 🎨 [핵심 배경색 로직 수정]
-            // 우선순위 1: 취소자는 짙은 회색 배경 + 취소선 적용
-            // 우선순위 2: 미납자는 옅은 빨강 배경 적용
-            // 우선순위 3: 일반 수영 선수는 3명 단위로 옅은 파랑(#eef6ff)과 백색(#ffffff) 교대
             let rowStyle = '';
             if (isCanceled) {
-                rowStyle = 'background-color: #adb5bd; color: #495057; text-decoration: line-through;';
+                rowStyle = 'background-color: #495057; color: #ffffff;';
             } else if (isUnpaid) {
                 rowStyle = 'background-color: #f8d7da;';
             } else {
@@ -362,15 +417,15 @@ router.get('/players', (req, res) => {
                 rowStyle = groupIndex % 2 === 0 ? 'background-color: #ffffff;' : 'background-color: #eef6ff;';
             }
 
-            const rawEvent = String(player['희망종목'] || '').trim();
-            const currentEvent = rawEvent.length > 0 ? rawEvent.substring(0, 7) : '미확인';
+            const rawEvent = String(player['desired_event'] || '').trim();
 
             let itemEventOptions = '';
             allEventsList.forEach(evt => {
-                itemEventOptions += `<option value="${evt}" ${evt === currentEvent ? 'selected' : ''}>${evt}</option>`;
+                const isSelected = (evt === rawEvent || rawEvent.includes(evt) || evt.includes(rawEvent));
+                itemEventOptions += `<option value="${evt}" ${isSelected ? 'selected' : ''}>${evt}</option>`;
             });
 
-            const feeList = ['납부완료', '미납', '무료출전권', '환불완료', '미확인'];
+            const feeList = ['입금완료', '미입금', '무료출전권', '환불완료', '미확인'];
             let itemFeeOptions = '';
             feeList.forEach(f => {
                 itemFeeOptions += `<option value="${f}" ${f === currentFee ? 'selected' : ''}>${f}</option>`;
@@ -384,7 +439,7 @@ router.get('/players', (req, res) => {
                     </td>
                     <td><strong>${name}</strong></td>
                     <td>
-                        <input type="text" name="phone_${index}" id="phone_${index}" value="${phone}" style="width: 110px; padding: 4px; text-align: center;" placeholder="취소시 0">
+                        <input type="text" name="phone_${index}" id="phone_${index}" value="${phone}" style="width: 110px; padding: 4px; text-align: center;" placeholder="환불시 0">
                     </td>
                     <td>
                         <select name="event_${index}" id="event_${index}" style="padding: 4px;">
@@ -399,6 +454,7 @@ router.get('/players', (req, res) => {
                     <td>
                         <form action="/admin/update-player" method="POST" style="margin:0;">
                             <input type="hidden" name="adminName" value="${currentAdminName}">
+                            <input type="hidden" name="id" value="${player.id}">
                             <input type="hidden" name="name" value="${name}">
                             <input type="hidden" name="phone" value="${phone}">
                             <input type="hidden" name="updatedPhone" id="updatedPhone_${index}">
@@ -424,8 +480,8 @@ router.get('/players', (req, res) => {
         SEARCH_NAME: searchName,
         SEARCH_PHONE4: searchPhone4,
         EVENT_OPTIONS_HTML: eventOptionsHtml,
-        FEE_SELECTED_PAID: searchFee === '납부완료' ? 'selected' : '',
-        FEE_SELECTED_UNPAID: searchFee === '미납' ? 'selected' : '',
+        FEE_SELECTED_PAID: searchFee === '입금완료' ? 'selected' : '',
+        FEE_SELECTED_UNPAID: searchFee === '미입금' ? 'selected' : '',
         FEE_SELECTED_FREE: searchFee === '무료출전권' ? 'selected' : '',
         FEE_SELECTED_UNKNOWN: searchFee === '미확인' ? 'selected' : '',
         DOWNLOAD_QUERY_STRING: downloadQueryString,
@@ -437,7 +493,7 @@ router.get('/players', (req, res) => {
 });
 
 // [GET] /admin/download-excel - 엑셀 다운로드 라우트
-router.get('/download-excel', (req, res) => {
+router.get('/download-excel', async (req, res) => {
     const currentAdminName = String(req.query.adminName || '').trim();
     const adminInfo = getAdminByName(currentAdminName);
     const adminAuth = adminInfo ? adminInfo.adminAuth : '보기';
@@ -446,7 +502,7 @@ router.get('/download-excel', (req, res) => {
         return res.redirect(`/admin?login=success&adminName=${encodeURIComponent(currentAdminName)}&denied=1`);
     }
 
-    const { players, headers } = getPlayerListAndHeaders();
+    const players = await getPlayerListFromSupabase();
 
     const searchName = String(req.query.searchName || '').trim();
     const searchPhone4 = String(req.query.searchPhone4 || '').trim();
@@ -454,37 +510,68 @@ router.get('/download-excel', (req, res) => {
     const searchFee = String(req.query.searchFee || '').trim();
 
     const filteredPlayers = players.filter(player => {
-        if (searchName && !String(player['이름'] || '').includes(searchName)) return false;
+        if (searchName && !String(player['name'] || '').includes(searchName)) return false;
 
-        const pPhone = String(player['연락처'] || '').replace(/[^0-9]/g, '');
-        const pPhone4 = String(player['연락처4'] || '').trim() || pPhone.slice(-4);
+        const pPhone = String(player['phone'] || '').replace(/[^0-9]/g, '');
+        const pPhone4 = String(player['phone4'] || '').trim() || pPhone.slice(-4);
         if (searchPhone4 && !pPhone.includes(searchPhone4) && pPhone4 !== searchPhone4) return false;
 
-        const pEvent = String(player['희망종목'] || '').trim();
+        const pEvent = String(player['desired_event'] || '').trim();
         if (searchEvent) {
             if (searchEvent === '미확인' && pEvent.length > 0) return false;
-            if (searchEvent !== '미확인' && !pEvent.startsWith(searchEvent)) return false;
+            if (searchEvent !== '미확인' && !pEvent.includes(searchEvent) && !searchEvent.includes(pEvent)) return false;
         }
 
-        const pFee = String(player['참가비현황'] || '').trim();
+        const pFee = String(player['entry_fee_status'] || '').trim();
+        const pPhoneVal = String(player['phone'] || '').trim();
+        const isPlayerCanceled = pFee === '취소' || pFee === '환불완료' || pPhoneVal === '환불완료' || pPhoneVal === '취소됨';
+
         if (searchFee) {
-            if (searchFee === '납부완료' && !(pFee === '납부완료' || pFee === '완납' || pFee === '입금완료')) return false;
-            if (searchFee === '미납' && pFee !== '미납') return false;
+            if (searchFee === '입금완료' && !(pFee === '입금완료' || pFee === '완납')) return false;
+            if (searchFee === '미입금' && pFee !== '미입금') return false;
             if (searchFee === '무료출전권' && !(pFee === '무료' || pFee === '무료출전권')) return false;
-            if (searchFee === '환불완료' && !(pFee === '환불완료' || pFee === '취소')) return false;
-            if (searchFee === '미확인' && (pFee === '납부완료' || pFee === '완납' || pFee === '입금완료' || pFee === '미납' || pFee === '무료' || pFee === '무료출전권' || pFee === '환불완료' || pFee === '취소')) return false;
+            if ((searchFee === '환불완료' || searchFee === '취소') && !isPlayerCanceled) return false;
+            if (searchFee === '미확인' && (pFee === '입금완료' || pFee === '완납' || pFee === '미입금' || pFee === '무료' || pFee === '무료출전권' || isPlayerCanceled)) return false;
         }
         return true;
     });
 
-    let headerOption = headers;
-    if (!headerOption || headerOption.length === 0) {
-        if (filteredPlayers.length > 0) {
-            headerOption = Object.keys(filteredPlayers[0]);
-        }
-    }
+    const exportData = filteredPlayers.map(p => ({
+        '대회날짜': p.competitionDate || '',
+        '접수날짜': p.registered_at || '',
+        '등록순서': p.id_no || '',
+        '이름': p.name || '',
+        '참가비현황': p.entry_fee_status || '',
+        '연락처': p.phone || '',
+        '연락처4': p.phone4 || '',
+        '성별': p.gender || '',
+        '소속클럽': p.club || '',
+        '주민등록번호': p.rrn || '',
+        '보호자이름': p.guardian_name || '',
+        '보호자연락처': p.guardian_phone || '',
+        '희망종목': p.desired_event || '',
+        '예상기록': p.expected_time || '',
+        '질병유무': p.medical_memo || '',
+        '기념품1': p.souvenir1 || '',
+        '홍보동의여부': p.marketing_consent || '',
+        '주소': p.address || '',
+        '종목': p.game || '',
+        '경기번호': p.match_no || '',
+        '등록시간': p.checkin_time || '',
+        '경기시간': p.entry_time || '',
+        '레인번호': p.lane_no || '',
+        '출발순서': p.startOrder || '',
+        '출발시간': p.startTime || '',
+        '출수시간': p.exitTime || '',
+        '완주시간': p.finishTime || '',
+        '기타': p.notes || '',
+        '기념품2': p.souvenir2 || '',
+        '등번호': p.bib_no || '',
+        '수정날짜': p.updated_at_custom || '',
+        '수정자': p.updated_by || ''
+    }));
 
-    const worksheet = xlsx.utils.json_to_sheet(filteredPlayers, { header: headerOption });
+    const worksheet = xlsx.utils.json_to_sheet(exportData);
     const workbook = xlsx.utils.book_new();
     xlsx.utils.book_append_sheet(workbook, worksheet, '선수명단');
 
@@ -513,9 +600,9 @@ router.post('/login', (req, res) => {
     }
 });
 
-// [POST] /admin/update-player - 개별 선수 정보 수정 및 연락처 '0' 입력 시 취소 처리
-router.post('/update-player', (req, res) => {
-    const { adminName, name, phone, updatedPhone, updatedEvent, updatedFee } = req.body;
+// [POST] /admin/update-player - 개별 선수 정보 수정 및 연락처 '0' 입력 시 환불완료 처리
+router.post('/update-player', async (req, res) => {
+    const { adminName, id, name, phone, updatedPhone, updatedEvent, updatedFee } = req.body;
     const adminInfo = getAdminByName(adminName);
     const adminAuth = adminInfo ? adminInfo.adminAuth : '보기';
 
@@ -523,43 +610,59 @@ router.post('/update-player', (req, res) => {
         return res.redirect(`/admin?login=success&adminName=${encodeURIComponent(adminName)}&denied=1`);
     }
 
-    const { players, headers } = getPlayerListAndHeaders();
+    try {
+        const players = await getPlayerListFromSupabase();
 
-    // 📌 이름과 기존 연락처(숫자만 비교)로 정확한 선수 위치 탐색
-    const rawTargetPhone = String(phone || '').replace(/[^0-9]/g, '');
-    const playerIndex = players.findIndex(p => {
-        const pNameMatches = String(p['이름'] || '').trim() === String(name).trim();
-        const pPhoneRaw = String(p['연락처'] || '').replace(/[^0-9]/g, '');
-        return pNameMatches && (pPhoneRaw === rawTargetPhone || rawTargetPhone === '');
-    });
+        const rawTargetPhone = String(phone || '').replace(/[^0-9]/g, '');
+        const targetPlayer = players.find(p => {
+            if (id && String(p.id) === String(id)) return true;
+            const pNameMatches = String(p['name'] || '').trim() === String(name).trim();
+            const pPhoneRaw = String(p['phone'] || '').replace(/[^0-9]/g, '');
+            return pNameMatches && (pPhoneRaw === rawTargetPhone || rawTargetPhone === '');
+        });
 
-    if (playerIndex !== -1) {
-        const inputPhone = String(updatedPhone || '').trim();
+        if (targetPlayer) {
+            const inputPhone = String(updatedPhone || '').trim();
+            const updatePayload = {};
 
-        // 💡 [핵심] 연락처 칸에 '0' 또는 '000' 입력 시 -> 자동으로 '환불완료(취소)' 처리!
-        if (inputPhone === '0' || inputPhone === '000') {
-            players[playerIndex]['연락처'] = '취소됨';
-            players[playerIndex]['연락처4'] = '0000';
-            players[playerIndex]['참가비현황'] = '환불완료';
-        } else {
-            players[playerIndex]['연락처'] = inputPhone;
-            players[playerIndex]['연락처4'] = String(inputPhone).replace(/[^0-9]/g, '').slice(-4);
-            players[playerIndex]['희망종목'] = updatedEvent;
-            players[playerIndex]['참가비현황'] = updatedFee;
+            if (inputPhone === '0' || inputPhone === '000') {
+                updatePayload['phone'] = phone;
+                updatePayload['phone4'] = String(phone).replace(/[^0-9]/g, '').slice(-4);
+                updatePayload['entry_fee_status'] = '환불완료';
+            } else {
+                updatePayload['phone'] = inputPhone;
+                updatePayload['phone4'] = String(inputPhone).replace(/[^0-9]/g, '').slice(-4);
+                
+                const eventConfigs = getEventConfigs();
+                const matchedConfig = eventConfigs.find(ec => updatedEvent === ec.eventName || updatedEvent.includes(ec.eventName) || ec.eventName.includes(updatedEvent));
+                updatePayload['desired_event'] = matchedConfig ? matchedConfig.eventName : updatedEvent;
+
+                updatePayload['entry_fee_status'] = updatedFee;
+            }
+
+            const now = getKSTDate();
+            const formattedDate = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')} ${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+            
+            updatePayload['updated_at_custom'] = formattedDate;
+            updatePayload['updated_by'] = adminInfo.adminName;
+
+            const { error: updateError } = await supabase
+                .from('swimmers')
+                .update(updatePayload)
+                .eq('id', targetPlayer.id);
+
+            if (updateError) {
+                console.error("관리자 선수 수정 수파베이스 업데이트 오류:", updateError);
+                throw updateError;
+            }
+
+            return res.redirect(`/admin/players?adminName=${encodeURIComponent(adminName)}&updated=1`);
         }
-
-        const now = new Date();
-        const formattedDate = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')} ${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
-        
-        players[playerIndex]['수정날짜'] = formattedDate;
-        players[playerIndex]['수정자'] = adminInfo.adminName;
-
-        savePlayerList(players, headers);
-        return res.redirect(`/admin/players?adminName=${encodeURIComponent(adminName)}&updated=1`);
+    } catch (error) {
+        console.error("관리자 선수 수정 오류:", error);
     }
 
     res.redirect(`/admin/players?adminName=${encodeURIComponent(adminName)}`);
 });
 
 module.exports = router;
-

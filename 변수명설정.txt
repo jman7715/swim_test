@@ -15,6 +15,11 @@
 관리자이름: adminName
 관리자비번: adminPassword
 
+대회정보 씨트의 항목
+종목명: eventName 
+참가비:  eventFee
+제한인원: maxParticipants
+
 접수날짜 / 종료날짜: regStartDate, regEndDate
 수정날짜 / 종료날짜: updateStartDate, updateEndDate
 배번공지날짜 / 종료날짜: bibStartDate, bibEndDate
@@ -30,7 +35,7 @@
 주민등록번호	     ssn (또는 idNumber)	본인 확인 및 보험 가입용
 연락처	            phone	선수 본인 휴대전화 번호
 연락처4	            phone4	본인 확인용 뒤 4자리 (핵심 열쇠)
-참가비현황	        entryFee	납부완료 / 미납 등
+참가비현황	        entryFee	입금완료 / 미입금 등
 주소	            address	거주지 또는 기념품 배송지
 소속클럽	        club	소속 수영 동호회 또는 팀명
 희망종목	        desiredEvent	1단계 신청 시 희망 종목
@@ -111,7 +116,49 @@ player_bib.js (선수용 - 배번 및 레인/조 공지)
 admin.js (관리자 전용 대시보드)
 접수 통계: 현재 총 접수 인원 및 부서/경기별 인원 실시간 카운트
 전체 명단 조회/검색: 이름, 소속, 참가부서 등으로 특정 선수 빠른 검색
-참가비 원클릭 관리: 리스트에서 '미납 / 완납' 클릭 시 즉시 엑셀 데이터에 반영
+참가비 원클릭 관리: 리스트에서 '미미입금납 / 완납' 클릭 시 즉시 엑셀 데이터에 반영
 대리 수정: 선수 전화 문의 시 희망경기, 예상기록, 기념품 등 대리 수정 (※ 단, 이름/주민번호 오타 수정은 데이터 안전을 위해 원본 엑셀 직접 수정 권장)
 
 
+
+
+
+==================================================
+[수영 대회 접수 프로그램] 엑셀 ↔ 수파베이스 항목 매칭표
+==================================================
+
+ 1. 대회날짜      -> competitionDate
+ 2. 접수날짜      -> registered_at
+ 3. 등록순서      -> id_no
+ 4. 이름          -> name
+ 5. 참가비현황    -> entry_fee_status
+ 6. 연락처        -> phone
+ 7. 연락처4       -> phone4
+ 8. 성별          -> gender
+ 9. 소속클럽      -> club
+10. 주민등록번호  -> rrn
+11. 보호자이름    -> guardian_name
+12. 보호자연락처  -> guardian_phone
+13. 희망종목      -> desired_event
+14. 예상기록      -> expected_time
+15. 질병유무      -> medical_memo
+16. 기념품1       -> souvenir1
+17. 홍보동의여부  -> marketing_consent
+18. 주소          -> address
+19. 종목          -> game
+20. 경기번호      -> match_no
+21. 등록시간      -> checkin_time
+22. 경기시간      -> entry_time
+23. 레인번호      -> lane_no
+24. 출발순서      -> startOrder
+25. 출발시간      -> startTime
+26. 출수시간      -> exitTime
+27. 완주시간      -> finishTime
+28. 기타          -> notes
+29. 기념품2       -> souvenir2
+30. 등번호        -> bib_no
+31. 수정날짜      -> updated_at_custom
+32. 수정자        -> updated_by
+
+*(참고: 엑셀의 '취소날짜' 항목은 수파베이스 설정 화면에 없어 제외되었으나, 
+접수 저장 기능에는 영향이 없습니다.)*

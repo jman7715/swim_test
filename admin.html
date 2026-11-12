@@ -55,8 +55,11 @@
 
         {{ALERT_DENIED_HTML}}
 
+        <!-- 📌 요청하신 총원 / 환불완료 / 현인원 구분 표시 및 환불완료자 링크 연결 -->
         <div style="margin-bottom: 25px; font-size: 22px; font-weight: bold; color: #333;">
-            총 접수 인원: <span style="color: #007BFF;">{{TOTAL_COUNT}} 명</span>
+            총원: <span style="color: #007BFF;">{{TOTAL_COUNT}} 명</span> &nbsp;|&nbsp; 
+            <a href="{{CANCELED_CARD_HREF}}" style="color: #dc3545; text-decoration: underline;">환불완료: {{CANCELED_COUNT}} 명</a> &nbsp;|&nbsp; 
+            현인원: <span style="color: #28a745;">{{ACTIVE_TOTAL_COUNT}} 명</span>
         </div>
 
         <div class="section-title">🏊‍♂️ 희망종목별 접수 인원</div>
@@ -64,17 +67,17 @@
             {{EVENT_CARDS_HTML}}
         </div>
 
-        <div class="section-title">💳 납부 현황</div>
+        <div class="section-title">💳 입금 현황</div>
         <div class="stat-grid">
             <a href="{{PAID_CARD_HREF}}" class="stat-card-link">
                 <div class="stat-card paid">
-                    <h4>납부완료</h4>
+                    <h4>입금완료</h4>
                     <div class="number">{{PAID_COUNT}} 명</div>
                 </div>
             </a>
             <a href="{{UNPAID_CARD_HREF}}" class="stat-card-link">
                 <div class="stat-card unpaid">
-                    <h4>미납</h4>
+                    <h4>미입금</h4>
                     <div class="number">{{UNPAID_COUNT}} 명</div>
                 </div>
             </a>
@@ -120,10 +123,8 @@
                 
                 <div class="form-group">
                     <label>연락처4 (뒤 4자리)</label>
-                        <input type="text" name="searchPhone4" value="{{SEARCH_PHONE4}}" maxlength="4" inputmode="numeric" oninput="this.value=this.value.replace(/[^0-9]/g,'')" placeholder="뒤 4자리 입력">
+                    <input type="text" name="searchPhone4" value="{{SEARCH_PHONE4}}" maxlength="4" inputmode="numeric" oninput="this.value=this.value.replace(/[^0-9]/g,'')" placeholder="뒤 4자리 입력">
                 </div>
-
-
 
                 <div class="form-group">
                     <label>희망종목</label>
@@ -135,23 +136,13 @@
                     <label>참가비현황</label>
                     <select name="searchFee">
                         <option value="">전체 (모든 상태)</option>
-                        <option value="납부완료" {{FEE_SELECTED_PAID}}>납부완료</option>
-                        <option value="미납" {{FEE_SELECTED_UNPAID}}>미납</option>
+                        <option value="입금완료" {{FEE_SELECTED_PAID}}>입금완료</option>
+                        <option value="미입금" {{FEE_SELECTED_UNPAID}}>미입금</option>
                         <option value="무료출전권" {{FEE_SELECTED_FREE}}>무료출전권</option>
+                        <option value="환불완료" {{FEE_SELECTED_CANCELED}}>환불완료(취소)</option>
                         <option value="미확인" {{FEE_SELECTED_UNKNOWN}}>미확인</option>
                     </select>
                 </div>
-                
-                <!--
-                <div class="search-btn-container">
-                    <div style="text-align: center; width: 100%;">
-                        <button type="submit" class="search-btn">검색하기</button>
-                        <a href="/admin/players?adminName={{ENCODED_ADMIN_NAME}}" style="margin-right: 10px; color: #6c757d; font-size: 30px; text-decoration: none;">조건 초기화</a>
-                        <a href="/admin/download-excel?{{DOWNLOAD_QUERY_STRING}}" class="excel-download-btn">📥 현재 검색결과 엑셀 다운로드</a>
-                    </div>
-                </div> 
-                -->
-
                 
                 <div class="search-btn-container">
                     <div style="display: flex; flex-direction: column; align-items: center; gap: 20px; width: 100%;">

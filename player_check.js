@@ -1,11 +1,29 @@
 const express = require('express');
-const xlsx = require('xlsx');
 const path = require('path');
 const fs = require('fs');
 const router = express.Router();
 
+// 📌 Supabase 클라이언트 연결 설정
+const supabase = require('./supabase');
+
+
 // 📌 공통 한국 시간(KST) 구하기 도구 함수 불러오기
 const { getKSTDate } = require('./utils');
+
+/**
+ * 📌 config.json 파일에서 설정 정보를 읽어오는 헬퍼 함수
+ */
+function getConfig() {
+    try {
+        const filePath = path.join(__dirname, 'config.json');
+        if (!fs.existsSync(filePath)) return {};
+        const fileData = fs.readFileSync(filePath, 'utf8');
+        return JSON.parse(fileData);
+    } catch (error) {
+        console.error("config.json 읽기 오류:", error);
+        return {};
+    }
+}
 
 /**
  * 📌 메인 입력 화면 (GET /entry) -> 신청자 조회 폼
@@ -43,24 +61,30 @@ router.get('/', (req, res) => {
 
 /**
  * 📌 검색 결과 처리 화면 (POST /entry/search)
- * - 이름과 연락처 뒤 4자리로 선수 조회
- * - '대회정보' 시트의 '조회날짜'와 '조회종료날짜'를 읽어와 정보 수정 가능 여부를 판단
+ * - 이름과 연락처 뒤 4자리로 선수 조회 (수파베이스 연동)
+ * - config.json의 editEndDate 설정을 읽어와 정보 수정 가능 여부를 판단
  */
-router.post('/search', (req, res) => {
+router.post('/search', async (req, res) => {
     const inputName = (req.body.name || '').trim();
     const inputPhone4 = (req.body.phone4 || '').trim().padStart(4, '0');
 
     try {
-        const workbook = xlsx.readFile('swimmers.xlsx', { cellDates: true }); 
-        const sheetName = '선수명단';
-        const sheet = workbook.Sheets[sheetName];
-        
-        const dataRows = sheet ? xlsx.utils.sheet_to_json(sheet) : [];
+        // 📌 수파베이스 swimmers 테이블에서 데이터 조회
+        const { data: dataRows, error: fetchError } = await supabase
+            .from('swimmers')
+            .select('*');
+
+        if (fetchError) {
+            console.error("수파베이스 데이터 조회 오류:", fetchError);
+            throw fetchError;
+        }
+
+        const rows = dataRows || [];
 
         // 📌 선수 검색 로직 (이름 및 연락처 뒤 4자리 매칭)
-        const foundRow = dataRows.find(row => {
-            const rowName = String(row['이름'] || '').trim(); 
-            const rawPhone = String(row['연락처'] || row['연락처4'] || '').trim(); 
+        const foundRow = rows.find(row => {
+            const rowName = String(row['name'] || '').trim(); 
+            const rawPhone = String(row['phone'] || row['phone4'] || '').trim(); 
             const rowPhone4 = rawPhone.slice(-4).padStart(4, '0');
 
             return rowName === inputName && rowPhone4 === inputPhone4;
@@ -70,31 +94,26 @@ router.post('/search', (req, res) => {
         let actionButtonsHtml = '';
 
         if (foundRow) {
-            const regDate = foundRow['접수날짜'] || ''; 
-            const name = foundRow['이름'] || ''; 
-            const gender = foundRow['성별'] || ''; 
-            const club = foundRow['소속클럽'] || ''; 
-            const desiredEvent = foundRow['희망종목'] || ''; 
-            const expectedTime = foundRow['예상기록'] || ''; 
-            const souvenir1 = foundRow['기념품1'] || ''; 
-            const entryFee = foundRow['참가비현황'] || ''; 
+            const regDate = foundRow['registered_at'] || ''; 
+            const name = foundRow['name'] || ''; 
+            const gender = foundRow['gender'] || ''; 
+            const club = foundRow['club'] || ''; 
+            const desiredEvent = foundRow['desired_event'] || ''; 
+            const expectedTime = foundRow['expected_time'] || ''; 
+            // [사유: 운영 정책 변경으로 셔츠(사은품) 조회 항목 일시 숨김 처리]
+            // const souvenir1 = foundRow['souvenir1'] || ''; 
+            const entryFee = foundRow['entry_fee_status'] || ''; 
 
-            // 📌 '대회정보' 시트에서 '조회날짜', '조회종료날짜'를 동적으로 확인하여 수정 가능 여부 판단
-            let isEditable = false;
+            // 📌 config.json에서 editEndDate를 확인하여 수정 가능 여부 판단
+            let isEditable = true;
             try {
-                const configSheet = workbook.Sheets['대회정보'];
-                if (configSheet) {
-                    const configData = xlsx.utils.sheet_to_json(configSheet);
-                    if (configData.length > 0) {
-                        const row = configData[0];
-                        const startDate = row['조회날짜'] ? new Date(row['조회날짜']) : null;
-                        const endDate = row['조회종료날짜'] ? new Date(row['조회종료날짜']) : null;
-                        const now = getKSTDate();
-                        
-                        if (startDate && endDate) {
-                            isEditable = (now >= startDate && now <= endDate);
-                        }
-                    }
+                const config = getConfig();
+                const editEnd = config.editEndDate;
+                
+                if (editEnd) {
+                    const endDate = new Date(editEnd);
+                    const now = getKSTDate();
+                    isEditable = (now <= endDate);
                 }
             } catch (e) {
                 console.error("수정 가능 기간 확인 오류:", e);
@@ -109,15 +128,23 @@ router.post('/search', (req, res) => {
                     <p><strong>소속:</strong> ${club}</p>
                     <p><strong>희망 경기:</strong> ${desiredEvent}</p>
                     <p><strong>예상 기록:</strong> ${expectedTime}</p>
-                    <p><strong>셔츠:</strong> ${souvenir1}</p>
+                    <!-- [사유: 셔츠(사은품) 항목을 화면에 표시하지 않기 위해 주석 처리함] -->
+                    <!-- <p><strong>셔츠:</strong> ${foundRow['souvenir1'] || ''}</p> -->
                     <p><strong>참가비현황:</strong> ${entryFee}</p>
                     ${!isEditable ? `
                         <p style="margin-top: 15px; color: #dc3545; font-size: 14px; text-align: center;">
-                            ※ 접수 정보 수정 기간이 아니므로 조회만 가능합니다.
+                            ※ 접수 정보 수정 기간이 마감되어 조회만 가능합니다.
                         </p>
                     ` : ''}
                 </div>
             `;
+
+            const editBtnStyle = isEditable 
+                ? 'background-color: #ffc107; color: #333;' 
+                : 'background-color: #e0e0e0; color: #888; pointer-events: none; cursor: not-allowed; opacity: 0.6;';
+
+            const editBtnText = isEditable ? '✏️ 정보수정' : '✏️ 수정마감';
+            const editBtnHref = isEditable ? `/entry/edit?name=${encodeURIComponent(name)}&phone4=${encodeURIComponent(inputPhone4)}` : '#';
 
             actionButtonsHtml = `
                 <div style="display: flex; gap: 8px; margin-top: 20px; width: 100%;">
@@ -127,11 +154,9 @@ router.post('/search', (req, res) => {
                     <a href="/entry" style="flex: 1; text-align: center; text-decoration: none; background-color: #007bff; color: white; height: 48px; line-height: 48px; border-radius: 8px; font-size: 15px; font-weight: bold; box-sizing: border-box;">
                         다시조회
                     </a>
-                    ${isEditable ? `
-                        <a href="/entry/edit?name=${encodeURIComponent(name)}&phone4=${encodeURIComponent(inputPhone4)}" style="flex: 1; text-align: center; text-decoration: none; background-color: #ffc107; color: #333; height: 48px; line-height: 48px; border-radius: 8px; font-size: 15px; font-weight: bold; box-sizing: border-box;">
-                            ✏️ 정보수정
-                        </a>
-                    ` : ''}
+                    <a href="${editBtnHref}" style="flex: 1; text-align: center; text-decoration: none; height: 48px; line-height: 48px; border-radius: 8px; font-size: 15px; font-weight: bold; box-sizing: border-box; ${editBtnStyle}">
+                        ${editBtnText}
+                    </a>
                 </div>
             `;
         } else {
@@ -207,7 +232,7 @@ router.post('/search', (req, res) => {
         res.send(`
             <div style="margin: 40px; font-family: Arial; text-align: center;">
                 <h3>오류가 발생했습니다.</h3>
-                <p>엑셀 파일 이름(swimmers.xlsx)이 올바른지 확인해주세요.</p>
+                <p>수파베이스 연결 상태를 확인해주세요.</p>
                 <a href="/entry">돌아가기</a>
             </div>
         `);
@@ -216,21 +241,36 @@ router.post('/search', (req, res) => {
 
 /**
  * 📌 1. 정보 수정 폼 화면 (GET /entry/edit)
+ * - editEndDate가 지났을 경우 수정 페이지 접근 차단 로직 추가
  */
-router.get('/edit', (req, res) => {
+router.get('/edit', async (req, res) => {
     const inputName = (req.query.name || '').trim();
     const inputPhone4 = (req.query.phone4 || '').trim();
     
     const old = req.query.error ? req.query : null;
 
     try {
-        const workbook = xlsx.readFile('swimmers.xlsx');
-        const sheet = workbook.Sheets['선수명단'];
-        const dataRows = sheet ? xlsx.utils.sheet_to_json(sheet) : [];
+        // 📌 수정 기간(editEndDate) 검증
+        const config = getConfig();
+        const editEnd = config.editEndDate;
+        if (editEnd) {
+            const endDate = new Date(editEnd);
+            const now = getKSTDate();
+            if (now > endDate) {
+                return res.send(`<script>alert('접수 정보 수정 기간이 마감되었습니다.'); window.location.href='/entry';</script>`);
+            }
+        }
 
-        const row = dataRows.find(r => {
-            const rName = String(r['이름'] || '').trim();
-            const rPhone = String(r['연락처'] || '').trim();
+        const { data: dataRows, error: fetchError } = await supabase
+            .from('swimmers')
+            .select('*');
+
+        if (fetchError) throw fetchError;
+        const rows = dataRows || [];
+
+        const row = rows.find(r => {
+            const rName = String(r['name'] || '').trim();
+            const rPhone = String(r['phone'] || '').trim();
             return rName === inputName && rPhone.slice(-4) === inputPhone4;
         });
 
@@ -238,38 +278,104 @@ router.get('/edit', (req, res) => {
             return res.send(`<script>alert('대상을 찾을 수 없습니다.'); history.back();</script>`);
         }
 
+        // 📌 config.json 파일에서 종목명, 참가비, 제한인원 읽기
+        const configRows = config.events || [];
+
+        // 📌 각 종목별 입금완료' 상태인 인원만 집계
+        const paidCounts = {};
+        rows.forEach(r => {
+            const ev = String(r['desired_event'] || '').trim();
+            const status = String(r['entry_fee_status'] || '').trim();
+            if (ev && status === '입금완료') {
+                paidCounts[ev] = (paidCounts[ev] || 0) + 1;
+            }
+        });
+
+        const originalEvent = row ? String(row['desired_event'] || '').trim() : '';
+
+        const eventFeeMap = {};
+        const eventMaxMap = {};
+        configRows.forEach(cr => {
+            const evName = String(cr['eventName'] || '').trim();
+            if (evName) {
+                eventFeeMap[evName] = Number(cr['entryFee'] || 0);
+                eventMaxMap[evName] = Number(cr['maxParticipants'] || 0);
+            }
+        });
+
+        const currentEventFee = eventFeeMap[originalEvent] || 0;
+
         const getVal = (formField, excelField) => {
             if (old && old[formField] !== undefined) return old[formField];
             return row ? (row[excelField] || '') : '';
         };
 
-        const nameVal = getVal('originName', '이름');
-        const phoneVal = String(getVal('phone', '연락처')).replace(/[^0-9]/g, '');
+        const nameVal = getVal('originName', 'name');
+        const phoneVal = String(getVal('phone', 'phone')).replace(/[^0-9]/g, '');
         const phone4Val = phoneVal.slice(-4);
-        const addressVal = getVal('address', '주소');
+        const addressVal = getVal('address', 'address');
         
-        const clubText = getVal('club', '소속클럽');
+        const clubText = getVal('club', 'club');
         const hasClubVal = old ? old.hasClub : (clubText && clubText !== '없음' ? 'yes' : 'no');
         const clubInputVal = hasClubVal === 'yes' ? (clubText === '없음' ? '' : clubText) : '';
 
-        const desiredEventVal = getVal('desiredEvent', '희망종목');
-        const expectedTimeVal = String(getVal('expectedTime', '예상기록')).replace(/[^0-9]/g, '');
-        const guardianNameVal = getVal('guardianName', '보호자이름');
-        const guardianPhoneVal = String(getVal('guardianPhone', '보호자연락처')).replace(/[^0-9]/g, '');
+        const desiredEventVal = getVal('desiredEvent', 'desired_event') || originalEvent;
+        const expectedTimeVal = String(getVal('expectedTime', 'expected_time')).replace(/[^0-9]/g, '');
+        const guardianNameVal = getVal('guardianName', 'guardian_name');
+        const guardianPhoneVal = String(getVal('guardianPhone', 'guardian_phone')).replace(/[^0-9]/g, '');
         
-        const medicalText = getVal('memo', '질병유무');
+        const medicalText = getVal('memo', 'medical_memo');
         const hasMedicalVal = old ? old.hasMedical : (medicalText && medicalText !== '없음' ? 'yes' : 'no');
         const memoInputVal = hasMedicalVal === 'yes' ? (medicalText === '없음' ? '' : medicalText) : '';
 
-        const souvenirVal = getVal('souvenir1', '기념품1');
-        const marketingVal = getVal('marketingConsent', '홍보동의여부');
+        // [사유: 운영 정책 변경으로 셔츠(사은품) 수정 값 불러오기 일시 숨김 처리]
+        // const souvenirVal = getVal('souvenir1', 'souvenir1');
+        const marketingVal = getVal('marketingConsent', 'marketing_consent');
 
-        // 📌 라디오 버튼 매칭을 위한 헬퍼 함수
         const checkMatch = (val, target) => {
             const v = String(val || '').trim();
             const t = String(target || '').trim();
             return v === t || v.includes(t) || t.includes(v);
         };
+
+        // 📌 동적 종목 라디오 버튼 생성 및 참가비/입금완료 제한인원 검증 로직 반영
+        let eventRadiosHtml = '';
+        configRows.forEach(cr => {
+            const evName = String(cr['eventName'] || '').trim();
+            if (!evName) return;
+            const evFee = Number(cr['entryFee'] || 0);
+            const evMax = Number(cr['maxParticipants'] || 0);
+
+            let currentPaid = 0;
+            for (const [ev, count] of Object.entries(paidCounts)) {
+                if (ev === evName || ev.includes(evName) || evName.includes(ev)) {
+                    currentPaid += count;
+                }
+            }
+
+            const isOwnEvent = checkMatch(originalEvent, evName);
+            const isSameFee = (evFee === currentEventFee);
+            const isFull = !isOwnEvent && (evMax > 0 && currentPaid >= evMax);
+            const selectable = isOwnEvent || (isSameFee && !isFull);
+
+            const isChecked = checkMatch(desiredEventVal, evName) ? 'checked' : '';
+
+            let badge = '';
+            if (!isSameFee) {
+                badge = ' (관리자에게 문의 바랍니다)';
+            } else if (isFull) {
+                badge = ' (관리자에게 문의 바랍니다)';
+            }
+
+            eventRadiosHtml += `
+                <div style="margin-bottom: 8px;" onclick="onEventOptionClick('${evName}', ${isSameFee}, ${isFull}, ${isOwnEvent})">
+                    <label class="radio-label" style="${!selectable ? 'opacity: 0.6; color: #888; cursor: not-allowed;' : 'cursor: pointer;'}">
+                        <input type="radio" name="desiredEvent" value="${evName}" ${isChecked} ${!selectable ? 'disabled' : ''}> 
+                        ${evName}${badge}
+                    </label>
+                </div>
+            `;
+        });
 
         res.send(`
             <!DOCTYPE html>
@@ -314,6 +420,15 @@ router.get('/edit', (req, res) => {
                             memoInput.disabled = true;
                             memoInput.value = '';
                             memoInput.required = false;
+                        }
+                    }
+
+                    function onEventOptionClick(evName, isSameFee, isFull, isOwnEvent) {
+                        if (isOwnEvent) return;
+                        if (!isSameFee) {
+                            alert('관리자의 확인이 필요합니다.');
+                        } else if (isFull) {
+                            alert('관리자의 확인이 필요합니다.');
                         }
                     }
 
@@ -364,10 +479,7 @@ router.get('/edit', (req, res) => {
                         <div class="form-group">
                             <label>희망종목</label>
                             <div class="radio-group">
-                                <label class="radio-label"><input type="radio" name="desiredEvent" value="1부 5Km (07시)" ${checkMatch(desiredEventVal, '1부 5Km (07시)') ? 'checked' : ''} required> 1부 5Km (07시)</label>
-                                <label class="radio-label"><input type="radio" name="desiredEvent" value="2부 5Km (09시)" ${checkMatch(desiredEventVal, '2부 5Km (09시)') ? 'checked' : ''}> 2부 5Km (09시)</label>
-                                <label class="radio-label"><input type="radio" name="desiredEvent" value="3부 10km (11시 10분)" ${checkMatch(desiredEventVal, '3부 10km (11시 10분)') ? 'checked' : ''}> 3부 10km (11시 10분)</label>
-                                <label class="radio-label"><input type="radio" name="desiredEvent" value="4부 5Km (15시 30분)" ${checkMatch(desiredEventVal, '4부 5Km (15시 30분)') ? 'checked' : ''}> 4부 5Km (15시 30분)</label>
+                                ${eventRadiosHtml}
                             </div>
                         </div>
 
@@ -399,16 +511,22 @@ router.get('/edit', (req, res) => {
                             <textarea id="memo" name="memo" placeholder="상세 내용을 적어주세요" disabled>${memoInputVal}</textarea>
                         </div>
 
+                        <!-- ==========================================
+                          [기능 임시 중단] 추후 재사용을 위해 코드를 유지함.
+                          사유: 운영 정책 변경으로 인해 셔츠(사은품) 선택 항목을 일시 숨김 처리함.
+                          ========================================== -->
+                        <!-- 
                         <div class="form-group">
                             <label>기념품 (셔츠 사이즈)</label>
                             <div class="radio-group">
-                                <label class="radio-label"><input type="radio" name="souvenir1" value="S (85 ~ 90)" ${checkMatch(souvenirVal, 'S (85 ~ 90)') ? 'checked' : ''} required> S (85 ~ 90)</label>
-                                <label class="radio-label"><input type="radio" name="souvenir1" value="M (95 ~ 100)" ${checkMatch(souvenirVal, 'M (95 ~ 100)') ? 'checked' : ''}> M (95 ~ 100)</label>
-                                <label class="radio-label"><input type="radio" name="souvenir1" value="L (100 ~ 105)" ${checkMatch(souvenirVal, 'L (100 ~ 105)') ? 'checked' : ''}> L (100 ~ 105)</label>
-                                <label class="radio-label"><input type="radio" name="souvenir1" value="XL (105 ~ 110)" ${checkMatch(souvenirVal, 'XL (105 ~ 110)') ? 'checked' : ''}> XL (105 ~ 110)</label>
-                                <label class="radio-label"><input type="radio" name="souvenir1" value="XXL (110 ~ 115)" ${checkMatch(souvenirVal, 'XXL (110 ~ 115)') ? 'checked' : ''}> XXL (110 ~ 115)</label>
+                                <label class="radio-label"><input type="radio" name="souvenir1" value="S (85 ~ 90)" ${checkMatch('', 'S (85 ~ 90)') ? 'checked' : ''}> S (85 ~ 90)</label>
+                                <label class="radio-label"><input type="radio" name="souvenir1" value="M (95 ~ 100)" ${checkMatch('', 'M (95 ~ 100)') ? 'checked' : ''}> M (95 ~ 100)</label>
+                                <label class="radio-label"><input type="radio" name="souvenir1" value="L (100 ~ 105)" ${checkMatch('', 'L (100 ~ 105)') ? 'checked' : ''}> L (100 ~ 105)</label>
+                                <label class="radio-label"><input type="radio" name="souvenir1" value="XL (105 ~ 110)" ${checkMatch('', 'XL (105 ~ 110)') ? 'checked' : ''}> XL (105 ~ 110)</label>
+                                <label class="radio-label"><input type="radio" name="souvenir1" value="XXL (110 ~ 115)" ${checkMatch('', 'XXL (110 ~ 115)') ? 'checked' : ''}> XXL (110 ~ 115)</label>
                             </div>
                         </div>
+                        -->
 
                         <div class="form-group">
                             <label>홍보동의여부</label>
@@ -433,10 +551,11 @@ router.get('/edit', (req, res) => {
 
 /**
  * 📌 2. 정보 수정 반영 처리 (POST /entry/update)
- * - 수정 데이터를 입력받아 swimmers.xlsx 파일의 '선수명단' 시트에 반영
- * - 수정 시점의 한국 표준시(KST)를 '수정날짜' 컬럼에 기록
+ * - 수정 데이터를 입력받아 수파베이스 swimmers 테이블에 반영
+ * - 수정 시점의 한국 표준시(KST)를 'updated_at_custom' 컬럼에 기록
+ * - editEndDate가 지났을 경우 업데이트 요청 차단 방어 로직 추가
  */
-router.post('/update', (req, res) => {
+router.post('/update', async (req, res) => {
     const getQueryString = (body) => {
         return Object.keys(body)
             .map(key => encodeURIComponent(key) + '=' + encodeURIComponent(body[key] || ''))
@@ -475,7 +594,8 @@ router.post('/update', (req, res) => {
     const rawGuardianPhone = (req.body.guardianPhone || '').trim();
     const hasMedical = req.body.hasMedical || 'no';
     const memo = hasMedical === 'yes' ? (req.body.memo || '').trim() : '없음';
-    const souvenir1 = req.body.souvenir1 || '';
+    // [사유: 셔츠(사은품) 항목 비활성화로 인한 데이터 추출 임시 중단]
+    // const souvenir1 = req.body.souvenir1 || '';
     const marketingConsent = req.body.marketingConsent || '';
 
     const phone = formatPhone(rawPhone);
@@ -493,7 +613,8 @@ router.post('/update', (req, res) => {
     if (!guardianName) return res.send(`<script>alert('보호자 이름을 입력해 주세요.'); window.location.href='/entry/edit${qs}';</script>`);
     if (!rawGuardianPhone) return res.send(`<script>alert('보호자 연락처를 입력해 주세요.'); window.location.href='/entry/edit${qs}';</script>`);
     if (hasMedical === 'yes' && !memo) return res.send(`<script>alert('질병 내용을 입력해 주세요.'); window.location.href='/entry/edit${qs}';</script>`);
-    if (!souvenir1) return res.send(`<script>alert('기념품(셔츠 사이즈)을 선택해 주세요.'); window.location.href='/entry/edit${qs}';</script>`);
+    // [사유: 셔츠(사은품) 항목 비활성화로 인한 필수 입력 유효성 검사 임시 중단]
+    // if (!souvenir1) return res.send(`<script>alert('기념품(셔츠 사이즈)을 선택해 주세요.'); window.location.href='/entry/edit${qs}';</script>`);
     if (!marketingConsent) return res.send(`<script>alert('홍보동의여부를 선택해 주세요.'); window.location.href='/entry/edit${qs}';</script>`);
 
     if (rawPhone.length < 8 || rawPhone.length > 12) {
@@ -507,61 +628,115 @@ router.post('/update', (req, res) => {
     }
 
     try {
-        const filePath = 'swimmers.xlsx';
-        const workbook = xlsx.readFile(filePath);
-        const sheetName = '선수명단';
-        const sheet = workbook.Sheets[sheetName];
-        let dataRows = xlsx.utils.sheet_to_json(sheet);
+        // 📌 수정 기간(editEndDate) 검증
+        const config = getConfig();
+        const editEnd = config.editEndDate;
+        if (editEnd) {
+            const endDate = new Date(editEnd);
+            const now = getKSTDate();
+            if (now > endDate) {
+                return res.send(`<script>alert('접수 정보 수정 기간이 마감되었습니다.'); window.location.href='/entry';</script>`);
+            }
+        }
 
-        const index = dataRows.findIndex(row => {
-            const rName = String(row['이름'] || '').trim();
-            const rPhone = String(row['연락처'] || '').trim();
+        const { data: dataRows, error: fetchError } = await supabase
+            .from('swimmers')
+            .select('*');
+
+        if (fetchError) throw fetchError;
+        const rows = dataRows || [];
+
+        const targetRow = rows.find(row => {
+            const rName = String(row['name'] || '').trim();
+            const rPhone = String(row['phone'] || '').trim();
             const rPhone4 = rPhone.slice(-4).padStart(4, '0');
             return rName === originName && rPhone4 === originPhone4;
         });
 
-        if (index !== -1) {
-            // 📌 한국 표준시(KST) 기준 수정 날짜 문자열 생성
-            const now = getKSTDate();
-            const updateDateStr = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-${String(now.getDate()).padStart(2,'0')} ${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')}:${String(now.getSeconds()).padStart(2,'0')}`;
-
-            // 📌 선수 정보 갱신
-            dataRows[index]['연락처'] = phone;
-            dataRows[index]['연락처4'] = phone4;
-            dataRows[index]['주소'] = address;
-            dataRows[index]['소속클럽'] = club;
-            dataRows[index]['희망종목'] = desiredEvent;
-            dataRows[index]['예상기록'] = expectedTime;
-            dataRows[index]['보호자이름'] = guardianName;
-            dataRows[index]['보호자연락처'] = guardianPhone;
-            dataRows[index]['질병유무'] = memo;
-            dataRows[index]['기념품1'] = souvenir1;
-            dataRows[index]['홍보동의여부'] = marketingConsent;
-
-            // 📌 선수명단 시트의 '수정날짜' 및 '수정자' 열에 시점 데이터 기록
-            dataRows[index]['수정날짜'] = updateDateStr;
-            dataRows[index]['수정자'] = '선수';
-
-            const newSheet = xlsx.utils.json_to_sheet(dataRows);
-            workbook.Sheets[sheetName] = newSheet;
-            xlsx.writeFile(workbook, filePath);
-
-            res.send(`
-                <form id="searchRedirect" action="/entry/search" method="POST">
-                    <input type="hidden" name="name" value="${originName}">
-                    <input type="hidden" name="phone4" value="${phone4}">
-                </form>
-                <script>
-                    alert('정보가 성공적으로 수정되었습니다.');
-                    document.getElementById('searchRedirect').submit();
-                </script>
-            `);
-        } else {
-            res.send(`<script>alert('수정 대상을 찾지 못했습니다.'); window.location.href='/entry';</script>`);
+        if (!targetRow) {
+            return res.send(`<script>alert('수정할 대상을 찾을 수 없습니다.'); window.location.href='/entry';</script>`);
         }
+
+        const originalEvent = String(targetRow['desired_event'] || '').trim();
+
+        // 📌 config.json 파일에서 참가비 및 제한인원 확인
+        const configRows = config.events || [];
+        const eventFeeMap = {};
+        const eventMaxMap = {};
+        configRows.forEach(cr => {
+            const evName = String(cr['eventName'] || '').trim();
+            if (evName) {
+                eventFeeMap[evName] = Number(cr['entryFee'] || 0);
+                eventMaxMap[evName] = Number(cr['maxParticipants'] || 0);
+            }
+        });
+
+        const originalFee = eventFeeMap[originalEvent] || 0;
+        const newFee = eventFeeMap[desiredEvent] || 0;
+
+        // 📌 참가비 검증 (다른 참가비 종목으로 변경 시 차단)
+        if (desiredEvent !== originalEvent && newFee !== originalFee) {
+            return res.send(`<script>alert('참가비가 달라서 관리자의 확인이 필요합니다.'); window.location.href='/entry/edit${qs}';</script>`);
+        }
+
+        // 📌 제한인원 검증 (참가비현황이 '입금완료'인 인원 기준)
+        if (desiredEvent !== originalEvent) {
+            const maxPart = eventMaxMap[desiredEvent] || 0;
+            const paidCount = rows.filter(r => {
+                const ev = String(r['desired_event'] || '').trim();
+                const status = String(r['entry_fee_status'] || '').trim();
+                return ev === desiredEvent && status === '입금완료';
+            }).length;
+
+            if (maxPart > 0 && paidCount >= maxPart) {
+                return res.send(`<script>alert('관리자의 확인이 필요합니다.'); window.location.href='/entry/edit${qs}';</script>`);
+            }
+        }
+
+        // 📌 한국 표준시(KST) 기준 수정 날짜 문자열 생성
+        const now = getKSTDate();
+        const updateDateStr = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-${String(now.getDate()).padStart(2,'0')} ${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')}:${String(now.getSeconds()).padStart(2,'0')}`;
+
+        // 📌 수파베이스 swimmers 테이블 업데이트 실행
+        const { error: updateError } = await supabase
+            .from('swimmers')
+            .update({
+                phone: phone,
+                phone4: phone4,
+                address: address,
+                club: club,
+                desired_event: desiredEvent,
+                expected_time: expectedTime,
+                guardian_name: guardianName,
+                guardian_phone: guardianPhone,
+                medical_memo: memo,
+                // [사유: 셔츠(사은품) 항목 비활성화로 인한 업데이트 데이터 반영 임시 중단]
+                // souvenir1: souvenir1,
+                marketing_consent: marketingConsent,
+                updated_at_custom: updateDateStr,
+                updated_by: '선수'
+            })
+            .eq('id', targetRow.id);
+
+        if (updateError) {
+            console.error("수파베이스 업데이트 오류:", updateError);
+            throw updateError;
+        }
+
+        res.send(`
+            <form id="searchRedirect" action="/entry/search" method="POST">
+                <input type="hidden" name="name" value="${originName}">
+                <input type="hidden" name="phone4" value="${phone4}">
+            </form>
+            <script>
+                alert('정보가 성공적으로 수정되었습니다.');
+                document.getElementById('searchRedirect').submit();
+            </script>
+        `);
+
     } catch (error) {
-        console.error(error);
-        res.send(`<script>alert('수정 중 오류가 발생했습니다.'); window.location.href='/entry/edit${qs}';</script>`);
+        console.error("선수 정보 수정 반영 오류:", error);
+        res.send(`<script>alert('수정 처리 중 오류가 발생했습니다.'); window.location.href='/entry';</script>`);
     }
 });
 

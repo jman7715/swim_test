@@ -1,0 +1,35 @@
+{
+  "competitionName": "2026년 아쿠아마라톤 대회",
+  "competitionDate": "2026.11.22",
+
+  "regStartDate": "2026.10.22 13:00",
+  "regEndDate": "2026.11.22 13:05",
+  
+  "checkStartDate": "2026.10.12",
+  "checkEndDate": "2026.11.22",
+
+  "editEndDate": "2026.10.20",  
+
+  "bibStartDate": "2026.10.21",
+  "bibEndDate": "2026.11.22",
+
+  "recordStartDate": "2026.11.22",
+  "recordEndDate": "2026.12.22",
+
+  "admins": [
+    { "adminName": "장백산", "adminPassword": "1122", "adminAuth": "배번수정" },
+    { "adminName": "김찬희", "adminPassword": "9622", "adminAuth": "접수수정" },
+    { "adminName": "최승혁", "adminPassword": "1027", "adminAuth": "접수수정" },
+    { "adminName": "임원", "adminPassword": "1122", "adminAuth": "보기" }
+  ],
+
+  
+  "totalMaxParticipants": 500,
+
+  "events": [
+    { "eventName": "1부 5Km (07시)", "entryFee": 80000, "maxParticipants": 0 },
+    { "eventName": "2부 5Km (09시)", "entryFee": 80000, "maxParticipants": 0 },
+    { "eventName": "3부 10km (11시 10분)", "entryFee": 100000, "maxParticipants": 0 },
+    { "eventName": "4부 5Km (15시 30분)", "entryFee": 80000, "maxParticipants": 0 }
+  ]
+}

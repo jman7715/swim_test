@@ -1,16 +1,26 @@
 const express = require('express');
-const xlsx = require('xlsx');
 const path = require('path');
 const fs = require('fs');
 const router = express.Router();
 
-// 엑셀의 시간 숫자 값을 HH:mm 형식으로 변환하는 함수
-function excelTimeToStr(excelTime) {
-    if (typeof excelTime !== 'number') return excelTime || '';
-    const totalMinutes = Math.round(excelTime * 24 * 60);
-    const hours = Math.floor(totalMinutes / 60);
-    const minutes = totalMinutes % 60;
-    return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`;
+// 📌 Supabase 클라이언트 연결 설정
+const supabase = require('./supabase');
+
+
+// 시간 수치/문자열 값을 HH:mm 형식으로 변환하는 함수
+function formatTimeString(timeVal) {
+    if (!timeVal) return '';
+    const str = String(timeVal).trim();
+    if (str.includes(':')) return str;
+    
+    const num = Number(str);
+    if (!isNaN(num) && num < 1) {
+        const totalMinutes = Math.round(num * 24 * 60);
+        const hours = Math.floor(totalMinutes / 60);
+        const minutes = totalMinutes % 60;
+        return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`;
+    }
+    return str;
 }
 
 // 메인 입력 화면 (GET /bib) -> 라우터이므로 여기서는 루트('/')
@@ -46,22 +56,27 @@ router.get('/', (req, res) => {
 });
 
 // 검색 결과 처리 화면 (POST /bib/search)
-router.post('/search', (req, res) => {
+router.post('/search', async (req, res) => {
     const inputName = (req.body.name || '').trim();
     const inputPhone4 = (req.body.phone4 || '').trim().padStart(4, '0');
 
     try {
-        const workbook = xlsx.readFile('swimmers.xlsx'); 
-        const sheetName = '선수명단';
-        const sheet = workbook.Sheets[sheetName];
-        
-        // 항목명(헤더)을 키값으로 하는 객체 배열 형태로 변환
-        const dataRows = sheet ? xlsx.utils.sheet_to_json(sheet) : [];
+        // 📌 수파베이스 swimmers 테이블에서 전체 데이터 조회
+        const { data: dataRows, error: fetchError } = await supabase
+            .from('swimmers_bib')
+            .select('*');
+
+        if (fetchError) {
+            console.error("수파베이스 데이터 조회 오류:", fetchError);
+            throw fetchError;
+        }
+
+        const rows = dataRows || [];
 
         // 이름과 전화번호 뒤 4자리가 일치하는 행 찾기
-        const foundRow = dataRows.find(row => {
-            const rowName = String(row['이름'] || '').trim(); 
-            const rawPhone = String(row['연락처4'] || row['연락처'] || '').trim(); 
+        const foundRow = rows.find(row => {
+            const rowName = String(row['name'] || '').trim(); 
+            const rawPhone = String(row['phone4'] || row['phone'] || '').trim(); 
             const rowPhone4 = rawPhone.slice(-4).padStart(4, '0');
 
             return rowName === inputName && rowPhone4 === inputPhone4;
@@ -69,20 +84,21 @@ router.post('/search', (req, res) => {
 
         let resultHtml = '';
         if (foundRow) {
-            const name = foundRow['이름'] || '';            // 이름
-            const gender = foundRow['성별'] || '';          // 성별
+            const name = foundRow['name'] || '';            // 이름
+            const gender = foundRow['gender'] || '';          // 성별
             
             // 종목: 숫자인 경우 천단위 콤마 및 'm' 추가 (예: 5000 -> 5,000m)
-            // let game = foundRow['희망종목'] || foundRow['종목'] || '';
-            let game = foundRow['종목'] || '';
+            let game = foundRow['game'] || foundRow['desired_event'] || '';
             if (!isNaN(game) && game !== '') {
                 game = Number(game).toLocaleString() + 'm';
             }
 
-            const matchNo = foundRow['경기번호'] || '';    // 경기번호
-            const bNo = foundRow['등번호'] || '';          // 등번호
-            const standbyTime = excelTimeToStr(foundRow['등록시간']); // 등록시간
-            const startTime = excelTimeToStr(foundRow['경기시간']);   // 경기시간
+            const matchNo = foundRow['match_no'] || '';    // 경기번호
+            const lane_no = foundRow['lane_no'] || '';          // 레인번호
+            const bNo = foundRow['bib_no'] || '';          // 등번호
+            const standbyTime = formatTimeString(foundRow['checkin_time']); // 등록시간
+            const startTime = formatTimeString(foundRow['entry_time']);   // 경기시간
+            const notes = foundRow['notes'] || '';          // 기타사항
 
             resultHtml = `
                 <div class="result-box">
@@ -91,9 +107,11 @@ router.post('/search', (req, res) => {
                     <p><strong>성별 :</strong> ${gender}</p>
                     <p><strong>종목 :</strong> ${game}</p>
                     <p><strong>경기번호 :</strong> ${matchNo ? '제 ' + matchNo + ' 경기' : '미배정'}</p>
-                    <p><strong>등번호 :</strong> ${bNo || '미배정'}</p>
+                    <p><strong>레인번호 :</strong> ${lane_no ? '제 ' + lane_no + ' 레인' : '미배정'}</p>
+                    <p><strong>등번호 :</strong> ${bNo || '수정 중 입니다.'}</p>
                     <p><strong>등록시간 :</strong> ${standbyTime}</p>
                     <p><strong>경기시간 :</strong> ${startTime}</p>
+                    <p><strong>기타사항 :</strong> ${notes}</p>
                 </div>
             `;
         } else {
@@ -136,12 +154,14 @@ router.post('/search', (req, res) => {
                     <div class="images">
                         <h3>[ 안내 이미지 ]</h3>
                         
-                        <!-- PC 전용 이미지 (모바일에서는 숨김) -->
+                        <!-- PC 전용 이미지 -->
                         <img src="/info_100.jpg" alt="안내 이미지 1" class="pc-only" onerror="this.style.display='none'">
+                        <img src="/info_200.jpg" alt="안내 이미지 2" class="pc-only" onerror="this.style.display='none'">
                         <img src="/info_300.jpg" alt="안내 이미지 3" class="pc-only" onerror="this.style.display='none'">
-
-                        <!-- 모바일 전용 이미지 (PC에서는 숨김) -->
+                        
+                        <!-- 모바일 전용 이미지 -->
                         <img src="/info_101.jpg" alt="안내 이미지 1" class="mobile-only" onerror="this.style.display='none'">
+                        <img src="/info_201.jpg" alt="안내 이미지 2" class="mobile-only" onerror="this.style.display='none'">
                         <img src="/info_301.jpg" alt="안내 이미지 3" class="mobile-only" onerror="this.style.display='none'">
                     </div>
                     </div>
@@ -157,7 +177,7 @@ router.post('/search', (req, res) => {
         res.send(`
             <div style="margin: 40px; font-family: Arial; text-align: center;">
                 <h3>오류가 발생했습니다.</h3>
-                <p>엑셀 파일 이름(swimmers.xlsx)이 올바른지 확인해주세요.</p>
+                <p>수파베이스 연결 상태를 확인해주세요.</p>
                 <a href="/bib">돌아가기</a>
             </div>
         `);
@@ -165,3 +185,4 @@ router.post('/search', (req, res) => {
 });
 
 module.exports = router;
+
