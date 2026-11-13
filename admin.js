@@ -263,6 +263,18 @@ router.get('/', async (req, res) => {
         `;
     }
 
+    // 📌 config.json의 adminAuth가 '배번수정'인 관리자에게만 배번 수정 버튼 추가
+    if (adminAuth === '배번수정') {
+        actionAreaHtml += `
+            <div style="text-align: center; margin-top: 15px;">
+                <a href="/admin/bibs?adminName=${encodeURIComponent(currentAdminName)}" class="view-all-btn" style="background-color: #2b8a3e;">🔢 배번 수정 및 관리</a>
+            </div>
+        `;
+    }
+
+
+
+
     let closedModalHtml = '';
     if (totalMax > 0 && paidCount >= totalMax) {
         let ev1Paid = 0, ev2Paid = 0, ev3Paid = 0, ev4Paid = 0;

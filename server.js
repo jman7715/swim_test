@@ -20,7 +20,7 @@ app.use(express.static(path.join(__dirname)));
 
 // 📌 서비스 라우터 연결
 const ticketRouter = require('./ticket');          // 1. 참가 접수 처리 라우터
-const playerCheckRouter = require('./player_check');   // 2. 등록상황 조회 및 수정 처리 라우터
+const playerCheckRouter = require('./player_check');   // 2. 접수 조회 및 수정 처리 라우터
 
 app.use('/register', ticketRouter);
 app.use('/entry', playerCheckRouter);
@@ -30,6 +30,11 @@ const bibRouter = require('./player_bib');          // 3. 배번/레인/조 공�
 app.use('/bib', bibRouter);                        
 const adminRouter = require('./admin');            // 관리자 기능 연결
 app.use('/admin', adminRouter);
+
+const adminBibsRouter = require('./admin_bibs');        // 베번수정 권한자 전용화면
+app.use('/admin/bibs', adminBibsRouter);
+
+
 
 /**
  * 📌 날짜 객체(Date)를 'YYYY.MM.DD HH:mm' 형식의 문자열로 변환하는 헬퍼 함수
@@ -214,14 +219,14 @@ app.get('/', (req, res) => {
                     1. 참가 접수하기
                 </a>
 
-                <!-- 2. 등록상황 확인 및 수정 버튼 -->
+                <!-- 2. 접수 확인 및 수정 버튼 -->
                 <a href="/entry" class="menu-btn ${isUpdateOpen ? '' : 'disabled'}">
-                    2. 등록상황 확인 및 수정
+                    2. 접수 확인 및 수정
                 </a>
 
-                <!-- 3. 배번 공지 확인 버튼 -->
+                <!-- 3. 배번 조회 확인 버튼 -->
                 <a href="/bib" class="menu-btn ${isBibOpen ? '' : 'disabled'}">
-                    3. 배번(레인/조) 공지 확인
+                    3. 배번(레인/조) 조회
                 </a>
 
                 <div class="admin-link">

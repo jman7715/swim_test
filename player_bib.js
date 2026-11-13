@@ -63,7 +63,7 @@ router.post('/search', async (req, res) => {
     try {
         // 📌 수파베이스 swimmers 테이블에서 전체 데이터 조회
         const { data: dataRows, error: fetchError } = await supabase
-            .from('swimmers_bib')
+            .from('swimmers')
             .select('*');
 
         if (fetchError) {

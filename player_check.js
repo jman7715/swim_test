@@ -449,18 +449,21 @@ router.get('/edit', async (req, res) => {
                         <input type="hidden" name="originPhone4" value="${phone4Val}">
 
                         <div class="form-group">
-                            <label>이름 (수정 불가)</label>
+                            <label>이름 (수정불가)</label>
                             <input type="text" value="${nameVal}" disabled>
                         </div>
 
                         <div class="form-group">
-                            <label for="phone">연락처 <br>(숫자만 입력)</label>
+                            <label for="phone">연락처 (수정불가)</label>
+                             <!--
                             <input type="text" id="phone" name="phone" required maxlength="12" placeholder="예: 01012341234" value="${phoneVal}" inputmode="numeric" oninput="this.value=this.value.replace(/[^0-9]/g,'')">
+                            -->
+                            <input type="text" value="${phoneVal}" disabled>
                         </div>
 
                         <div class="form-group">
-                            <label for="address">주소 (선택 입력)</label>
-                            <input type="text" id="address" name="address" placeholder="생략 가능" value="${addressVal}">
+                            <label for="address">지역</label>
+                            <input type="text" value="${addressVal}" disabled>
                         </div>
 
                         <div class="form-group">
@@ -536,7 +539,7 @@ router.get('/edit', async (req, res) => {
                             </div>
                         </div>
 
-                        <button type="submit" style="background-color: #28a745;">수정 완료</button>
+                        <button type="submit" style="background-color: #28a745;">수정완료</button>
                     </form>
                     <a href="javascript:history.back();" style="display:block; text-align:center; margin-top:20px; text-decoration:none; background-color:#6c757d; color:white; height:50px; line-height:50px; border-radius:8px; font-weight:bold;">취소</a>
                 </div>

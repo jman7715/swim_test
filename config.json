@@ -8,7 +8,7 @@
   "checkStartDate": "2026.10.12",
   "checkEndDate": "2026.11.22",
 
-  "editEndDate": "2026.10.20",  
+  "editEndDate": "2026.12.20",  
 
   "bibStartDate": "2026.10.21",
   "bibEndDate": "2026.11.22",
@@ -17,6 +17,7 @@
   "recordEndDate": "2026.12.22",
 
   "admins": [
+    { "adminName": "아무개", "adminPassword": "1122", "adminAuth": "배번수정" },
     { "adminName": "장백산", "adminPassword": "1122", "adminAuth": "배번수정" },
     { "adminName": "김찬희", "adminPassword": "9622", "adminAuth": "접수수정" },
     { "adminName": "최승혁", "adminPassword": "1027", "adminAuth": "접수수정" },

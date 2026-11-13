@@ -11,12 +11,9 @@ const supabase = require('./supabase');
 // ------------------------------------------------------------------
 // 🛡️ [동시접속 데이터 유실 방지] 대기열(Queue) 및 순차 처리 로직
 // ------------------------------------------------------------------
-const registerQueue = []; // 접수 요청을 순서대로 저장할 대기열 배열
-let isProcessingQueue = false; // 현재 저장 작업 중인지 나타내는 플래그
+const registerQueue = []; 
+let isProcessingQueue = false; 
 
-/**
- * 📌 config.json 파일에서 전체 토탈 제한인원을 읽어오는 헬퍼 함수
- */
 function getTotalMaxParticipants() {
     try {
         const filePath = path.join(__dirname, 'config.json');
@@ -30,9 +27,6 @@ function getTotalMaxParticipants() {
     }
 }
 
-/**
- * 📌 config.json 파일에서 모든 종목 및 제한인원 목록을 읽어오는 헬퍼 함수
- */
 function getEventConfigs() {
     try {
         const filePath = path.join(__dirname, 'config.json');
@@ -52,9 +46,6 @@ function getEventConfigs() {
     }
 }
 
-/**
- * 📌 대기열에 쌓인 접수건을 하나씩 꺼내어 순차적으로 수파베이스(swimmers 테이블)에 저장하는 함수
- */
 async function processRegisterQueue() {
     if (isProcessingQueue || registerQueue.length === 0) {
         return;
@@ -65,7 +56,6 @@ async function processRegisterQueue() {
     const { newRow, idNumber, name, phone, desiredEvent, qs, res } = task;
 
     try {
-        // 📌 수파베이스 swimmers 테이블에서 전체 데이터 가져오기
         const { data: dataRows, error: fetchError } = await supabase
             .from('swimmers')
             .select('*');
@@ -76,8 +66,6 @@ async function processRegisterQueue() {
         }
 
         const currentRows = dataRows || [];
-
-        // 📌 config.json 파일에서 최신 종목 및 제한인원, 전체 제한인원 기준 동적 로드
         const totalMax = getTotalMaxParticipants();
         const configRows = getEventConfigs();
         
@@ -95,12 +83,10 @@ async function processRegisterQueue() {
             }
         });
 
-        // 📌 1. config.json에 없는 종목인 경우 차단
         if (!isValidEvent) {
             return res.send(`<script>alert('존재하지 않거나 올바르지 않은 종목입니다.'); window.location.href='/register${qs}';</script>`);
         }
 
-        // 📌 2. '입금완료' 인원 기준 전체 제한인원 및 종목별 제한인원 초과 마감 재검증
         let totalPaidCount = 0;
         let eventPaidCount = 0;
 
@@ -115,17 +101,14 @@ async function processRegisterQueue() {
             }
         });
 
-        // 2-1. 전체 대회 총 정원(totalMaxParticipants) 초과 검증
         if (totalMax > 0 && totalPaidCount >= totalMax) {
             return res.send(`<script>alert('관리자의 확인이 필요합니다.'); window.location.href='/register${qs}';</script>`);
         }
 
-        // 2-2. 개별 종목 제한인원(maxParticipants) 초과 검증
         if (matchedMax > 0 && eventPaidCount >= matchedMax) {
             return res.send(`<script>alert('관리자의 확인이 필요합니다.'); window.location.href='/register${qs}';</script>`);
         }
 
-        // 📌 3. 중복 접수 체크 (이름과 전체 연락처 동시 일치 여부 확인 - 하이픈 무관)
         const cleanInputPhone = String(phone || '').replace(/[^0-9]/g, '');
         const isAlreadyRegistered = currentRows.some(row => {
             const rName = String(row['name'] || '').trim();
@@ -134,12 +117,10 @@ async function processRegisterQueue() {
         });
 
         if (isAlreadyRegistered) {
-            res.send(`<script>alert('이미 접수된 사용자입니다. (이름과 연락처가 일치합니다.)'); window.location.href='/register${qs}';</script>`);
+            res.send(`<script>alert('이미 접수된 사용자입니다. (이름과 연락처가 일치합니다.)'); window.location.href='/entry';</script>`);
         } else {
-            // config.json의 정확한 종목명으로 보정하여 저장
             newRow['desired_event'] = targetEventName;
 
-            // 수파베이스 swimmers 테이블에 저장 (INSERT)
             const { error: insertError } = await supabase
                 .from('swimmers')
                 .insert([newRow]);
@@ -168,8 +149,46 @@ async function processRegisterQueue() {
 }
 
 /**
+ * 📌 중복 확인 API (POST /register/check-duplicate)
+ */
+router.post('/check-duplicate', async (req, res) => {
+    const name = (req.body.name || '').trim();
+    const rawPhone = (req.body.phone || '').trim();
+    const cleanPhone = rawPhone.replace(/[^0-9]/g, '');
+
+    if (!name || !cleanPhone) {
+        return res.json({ success: false, message: '이름과 연락처를 모두 입력해 주세요.' });
+    }
+
+    try {
+        const { data, error } = await supabase
+            .from('swimmers')
+            .select('*');
+
+        if (error) {
+            return res.json({ success: false, message: '데이터 조회 중 오류가 발생했습니다.' });
+        }
+
+        const currentRows = data || [];
+        const isRegistered = currentRows.some(row => {
+            const rName = String(row['name'] || '').trim();
+            const rPhone = String(row['phone'] || '').replace(/[^0-9]/g, '');
+            return rName === name && rPhone === cleanPhone;
+        });
+
+        if (isRegistered) {
+            return res.json({ success: true, isRegistered: true, message: '이미 등록된 선수입니다.' });
+        } else {
+            return res.json({ success: true, isRegistered: false, message: '등록 가능한 선수입니다.' });
+        }
+    } catch (err) {
+        console.error("중복 확인 오류:", err);
+        return res.json({ success: false, message: '서버 오류가 발생했습니다.' });
+    }
+});
+
+/**
  * 📌 메인 입력 화면 (GET /register)
- * - config.json의 종목명과 제한인원을 동적으로 읽어와 폼을 생성합니다.
  */
 router.get('/', async (req, res) => {
     const old = req.query || {};
@@ -188,7 +207,6 @@ router.get('/', async (req, res) => {
         console.error("접수 화면 데이터 읽기 오류:", e);
     }
 
-    // 선수명단에서 '입금완료' 상태인 인원 집계 (종목별 및 전체 총합)
     const paidCounts = {};
     let totalPaidCount = 0;
     dataRows.forEach(row => {
@@ -208,7 +226,6 @@ router.get('/', async (req, res) => {
         return v === t || v.includes(t) || t.includes(v);
     };
 
-    // 📌 config.json 기반 동적 종목 라디오 버튼 생성
     let eventRadiosHtml = '';
     if (configRows.length > 0) {
         configRows.forEach((cr, index) => {
@@ -223,7 +240,6 @@ router.get('/', async (req, res) => {
                 }
             }
 
-            // 전체 제한인원이 찼거나, 개별 종목 제한인원이 찬 경우 마감
             const isTotalFull = (totalMax > 0 && totalPaidCount >= totalMax);
             const isEventFull = (evMax > 0 && currentPaid >= evMax);
             const isFull = isTotalFull || isEventFull;
@@ -253,7 +269,18 @@ router.get('/', async (req, res) => {
             <title>2026 아쿠아 마라톤 참가 접수</title>
             <link rel="stylesheet" href="/style.css">
             <style>
-                input:focus, textarea:focus {
+                /* 지역 입력창, 셀렉트박스, 텍스트area 글자 크기 및 여백 조절 */
+                input, select, textarea {
+                    font-size: 25px !important;
+                    padding: 10px !important;
+                }
+                
+                .form-group label {
+                    font-size: 25px !important;
+                    font-weight: bold;
+                }
+
+                input:focus, select:focus, textarea:focus {
                     background-color: #ffffe0 !important;
                     outline: 2px solid #ffc107;
                 }
@@ -266,6 +293,63 @@ router.get('/', async (req, res) => {
                 }
             </style>
             <script>
+                async function checkDuplicate() {
+                    const nameInput = document.getElementById('name');
+                    const phoneInput = document.getElementById('phone');
+                    const name = nameInput.value.trim();
+                    const phone = phoneInput.value.trim();
+
+                    if (!name) {
+                        alert('이름을 입력해 주세요.');
+                        nameInput.focus();
+                        return;
+                    }
+                    if (!phone) {
+                        alert('연락처를 입력해 주세요.');
+                        phoneInput.focus();
+                        return;
+                    }
+
+                    try {
+                        const response = await fetch('/register/check-duplicate', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ name, phone })
+                        });
+                        const result = await response.json();
+
+                        if (!result.success) {
+                            alert(result.message || '오류가 발생했습니다.');
+                            return;
+                        }
+
+                        if (result.isRegistered) {
+                            alert('이미 등록된 선수입니다.');
+                            window.location.href = '/entry';
+                        } else {
+                            alert('감사합니다! 등록되지 않은 정보입니다. 나머지 항목을 입력해 주세요.');
+                            
+                            nameInput.readOnly = true;
+                            phoneInput.readOnly = true;
+
+                            const checkBtn = document.getElementById('checkDupBtn');
+                            if (checkBtn) checkBtn.style.display = 'none';
+
+                            const subSection = document.getElementById('subSection');
+                            if (subSection) subSection.style.display = 'block';
+
+                            const hasClubYes = document.querySelector('input[name="hasClub"][value="yes"]');
+                            if (hasClubYes && hasClubYes.checked) toggleClubInput('yes');
+
+                            const hasMedicalYes = document.querySelector('input[name="hasMedical"][value="yes"]');
+                            if (hasMedicalYes && hasMedicalYes.checked) toggleMedicalInput('yes');
+                        }
+                    } catch (err) {
+                        console.error(err);
+                        alert('중복 확인 중 오류가 발생했습니다.');
+                    }
+                }
+
                 function toggleClubInput(hasClub) {
                     const clubInput = document.getElementById('club');
                     if (hasClub === 'yes') {
@@ -291,11 +375,8 @@ router.get('/', async (req, res) => {
                 }
 
                 window.onload = function() {
-                    const hasClubYes = document.querySelector('input[name="hasClub"][value="yes"]');
-                    if (hasClubYes && hasClubYes.checked) toggleClubInput('yes');
-
-                    const hasMedicalYes = document.querySelector('input[name="hasMedical"][value="yes"]');
-                    if (hasMedicalYes && hasMedicalYes.checked) toggleMedicalInput('yes');
+                    const subSection = document.getElementById('subSection');
+                    if (subSection) subSection.style.display = 'none';
                 };
             </script>
         </head>
@@ -303,115 +384,158 @@ router.get('/', async (req, res) => {
             <div class="container">
                 <h2>2026 아쿠아 마라톤 참가 접수</h2>
                 <form action="/register/search" method="POST">
-                    <!-- 1. 이름 입력 -->
+                    <!-- 1. 이름 -->
                     <div class="form-group">
                         <label for="name">1. 이름 </label>
                         <input type="text" id="name" name="name" required placeholder="(띄어쓰기 없이)" value="${old.name || ''}" oninput="this.value=this.value.replace(/\\s/g,'')">
                     </div>
-                    
-                    <!-- 2. 성별 선택 -->
-                    <div class="form-group">
-                        <label>2. 성별</label>
-                        <div class="radio-group">
-                            <label class="radio-label"><input type="radio" name="gender" value="남자" ${old.gender === '남자' ? 'checked' : ''} required> 남자</label>
-                            <label class="radio-label"><input type="radio" name="gender" value="여자" ${old.gender === '여자' ? 'checked' : ''}> 여자</label>
-                        </div>
-                    </div>
 
-                    <!-- 3. 주민등록번호 입력 -->
+                    <!-- 2. 연락처 -->
                     <div class="form-group">
-                        <label for="idNumber">3. 주민등록번호 <br> (숫자 13자리 입력 , - 생략)</label>
-                        <input type="text" id="idNumber" name="idNumber" required maxlength="13" placeholder="예: 9912311234567" value="${old.idNumber || ''}" inputmode="numeric" oninput="this.value=this.value.replace(/[^0-9]/g,'')">
-                    </div>
-
-                    <!-- 4. 연락처 입력 -->
-                    <div class="form-group">
-                        <label for="phone">4. 연락처 <br>(숫자만 입력)</label>
+                        <label for="phone">2. 연락처 <br>(숫자만 입력)</label>
                         <input type="text" id="phone" name="phone" required maxlength="12" placeholder="예: 01012341234" value="${old.phone || ''}" inputmode="numeric" oninput="this.value=this.value.replace(/[^0-9]/g,'')">
                     </div>
 
-                    <!-- 5. 주소 입력 -->
-                    <div class="form-group">
-                        <label for="address">5. 주소 (선택 입력)</label>
-                        <input type="text" id="address" name="address" placeholder="생략 가능" value="${old.address || ''}">
+                    <!-- 중복 확인 버튼 -->
+                    <div class="form-group" style="margin-bottom: 20px;">
+                        <button type="button" id="checkDupBtn" onclick="checkDuplicate()" style="background-color: orange; color: white; width: 100%; padding: 12px; font-size: 25px; font-weight: bold; border: none; border-radius: 5px; cursor: pointer;">중복 확인</button>
                     </div>
 
-                    <!-- 6. 소속클럽 입력 -->
-                    <div class="form-group">
-                        <label>6. 소속클럽 여부</label>
-                        <div class="radio-group">
-                            <label class="radio-label"><input type="radio" name="hasClub" value="no" ${!old.hasClub || old.hasClub === 'no' ? 'checked' : ''} onclick="toggleClubInput('no')"> 없음</label>
-                            <label class="radio-label"><input type="radio" name="hasClub" value="yes" ${old.hasClub === 'yes' ? 'checked' : ''} onclick="toggleClubInput('yes')"> 있음</label>
+                    <!-- 나머지 항목 영역 (중복 확인 전 숨김) -->
+                    <div id="subSection">
+                        <!-- 3. 주민등록번호 -->
+                        <div class="form-group">
+                            <label for="idNumber">3. 주민등록번호 <br> (숫자 13자리 입력 , - 생략)</label>
+                            <input type="text" id="idNumber" name="idNumber" required maxlength="13" placeholder="예: 9912311234567" value="${old.idNumber || ''}" inputmode="numeric" oninput="this.value=this.value.replace(/[^0-9]/g,'')">
                         </div>
-                    </div>
 
-                    <div class="form-group">
-                        <label for="club">소속클럽명</label>
-                        <input type="text" id="club" name="club" placeholder="클럽이 있는경우 입력" value="${old.club || ''}" disabled>
-                    </div>
-
-                    <!-- 7. 희망종목 선택 (config.json 연동) -->
-                    <div class="form-group">
-                        <label>7. 희망종목</label>
-                        <div class="radio-group">
-                            ${eventRadiosHtml}
+                        <!-- 4. 성별 -->
+                        <div class="form-group">
+                            <label>4. 성별</label>
+                            <div class="radio-group">
+                                <label class="radio-label"><input type="radio" name="gender" value="남자" ${old.gender === '남자' ? 'checked' : ''} required> 남자</label>
+                                <label class="radio-label"><input type="radio" name="gender" value="여자" ${old.gender === '여자' ? 'checked' : ''}> 여자</label>
+                            </div>
                         </div>
-                    </div>
 
-                    <!-- 8. 예상기록 입력 -->
-                    <div class="form-group">
-                        <label for="expectedTime">8. 예상기록 <br>(예:11030 = 1:10:30)</label>
-                        <input type="text" id="expectedTime" name="expectedTime" required maxlength="5" placeholder="5자리 입력 (예: 11030)" value="${old.expectedTime || ''}" inputmode="numeric" oninput="this.value=this.value.replace(/[^0-9]/g,'')">
-                    </div>
-
-                    <!-- 9. 보호자 이름 입력 -->
-                    <div class="form-group">
-                        <label for="guardianName">9. 보호자 이름 </label>
-                        <input type="text" id="guardianName" name="guardianName" required placeholder="(띄어쓰기 없이)" value="${old.guardianName || ''}" oninput="this.value=this.value.replace(/\\s/g,'')">
-                    </div>
-
-                    <!-- 10. 보호자 연락처 입력 -->
-                    <div class="form-group">
-                        <label for="guardianPhone">10. 보호자 연락처 <br>(숫자 입력)</label>
-                        <input type="text" id="guardianPhone" name="guardianPhone" required maxlength="12" placeholder="예: 01012341234" value="${old.guardianPhone || ''}" inputmode="numeric" oninput="this.value=this.value.replace(/[^0-9]/g,'')">
-                    </div>
-
-                    <!-- 11. 질병유무 입력 -->
-                    <div class="form-group">
-                        <label>11. 질병유무</label>
-                        <div class="radio-group">
-                            <label class="radio-label"><input type="radio" name="hasMedical" value="no" ${!old.hasMedical || old.hasMedical === 'no' ? 'checked' : ''} onclick="toggleMedicalInput('no')"> 없음</label>
-                            <label class="radio-label"><input type="radio" name="hasMedical" value="yes" ${old.hasMedical === 'yes' ? 'checked' : ''} onclick="toggleMedicalInput('yes')"> 있음</label>
+                        <!-- 5. 지역 (주소) -->
+                        <div class="form-group">
+                            <label for="address">5. 지역</label>
+                            <select id="address" name="address" required>
+                                <option value="" disabled ${!old.address ? 'selected' : ''}>지역을 선택해 주세요</option>
+                                <option value="광주시" ${old.address === '광주시' ? 'selected' : ''}>광주시</option>
+                                <option value="대구시" ${old.address === '대구시' ? 'selected' : ''}>대구시</option>
+                                <option value="대전시" ${old.address === '대전시' ? 'selected' : ''}>대전시</option>
+                                <option value="부산시" ${old.address === '부산시' ? 'selected' : ''}>부산시</option>
+                                <option value="서울시" ${old.address === '서울시' ? 'selected' : ''}>서울시</option>
+                                <option value="세종시" ${old.address === '세종시' ? 'selected' : ''}>세종시</option>
+                                <option value="울산시" ${old.address === '울산시' ? 'selected' : ''}>울산시</option>
+                                <option value="인천시" ${old.address === '인천시' ? 'selected' : ''}>인천시</option>
+                                <option value="강원도" ${old.address === '강원도' ? 'selected' : ''}>강원도</option>
+                                <option value="경기도" ${old.address === '경기도' ? 'selected' : ''}>경기도</option>
+                                <option value="경상남도" ${old.address === '경상남도' ? 'selected' : ''}>경상남도</option>
+                                <option value="경상북도" ${old.address === '경상북도' ? 'selected' : ''}>경상북도</option>
+                                <option value="전라남도" ${old.address === '전라남도' ? 'selected' : ''}>전라남도</option>
+                                <option value="전라북도" ${old.address === '전라북도' ? 'selected' : ''}>전라북도</option>
+                                <option value="제주도" ${old.address === '제주도' ? 'selected' : ''}>제주도</option>
+                                <option value="충청남도" ${old.address === '충청남도' ? 'selected' : ''}>충청남도</option>
+                                <option value="충청북도" ${old.address === '충청북도' ? 'selected' : ''}>충청북도</option>
+                            </select>
                         </div>
-                    </div>
 
-                    <div class="form-group">
-                        <label for="memo">기타 사항 (질병 유무가 있는 경우 작성)</label>
-                        <textarea id="memo" name="memo" placeholder="상세 내용을 적어주세요" disabled>${old.memo || ''}</textarea>
-                    </div>
-
-                    <!-- 12. 기념품 선택 -->
-                    <div class="form-group">
-                        <label>12. 기념품 (셔츠 사이즈)</label>
-                        <div class="radio-group">
-                            <label class="radio-label"><input type="radio" name="souvenir1" value="S (85 ~ 90)" ${old.souvenir1 === 'S (85 ~ 90)' ? 'checked' : ''} required> S (85 ~ 90)</label>
-                            <label class="radio-label"><input type="radio" name="souvenir1" value="M (95 ~ 100)" ${old.souvenir1 === 'M (95 ~ 100)' ? 'checked' : ''}> M (95 ~ 100)</label>
-                            <label class="radio-label"><input type="radio" name="souvenir1" value="L (100 ~ 105)" ${old.souvenir1 === 'L (100 ~ 105)' ? 'checked' : ''}> L (100 ~ 105)</label>
-                            <label class="radio-label"><input type="radio" name="souvenir1" value="XL (105 ~ 110)" ${old.souvenir1 === 'XL (105 ~ 110)' ? 'checked' : ''}> XL (105 ~ 110)</label>
-                            <label class="radio-label"><input type="radio" name="souvenir1" value="XXL (110 ~ 115)" ${old.souvenir1 === 'XXL (110 ~ 115)' ? 'checked' : ''}> XXL (110 ~ 115)</label>
+                        <!-- 6. 희망종목 -->
+                        <div class="form-group">
+                            <label>6. 희망종목</label>
+                            <div class="radio-group">
+                                ${eventRadiosHtml}
+                            </div>
                         </div>
-                    </div>
 
-                    <!-- 13. 홍보동의여부 선택 -->
-                    <div class="form-group">
-                        <label>13. 홍보동의여부</label>
-                        <div class="radio-group">
-                            <label class="radio-label"><input type="radio" name="marketingConsent" value="받고 싶다" ${!old.marketingConsent || old.marketingConsent === '받고 싶다' ? 'checked' : ''} required> 받고 싶다</label>
-                            <label class="radio-label"><input type="radio" name="marketingConsent" value="받고 싶지 않다" ${old.marketingConsent === '받고 싶지 않다' ? 'checked' : ''}> 받고 싶지 않다</label>
+                        <!-- 7. 예상기록 -->
+                        <div class="form-group">
+                            <label for="expectedTime">7. 예상기록 <br>(예:11030 = 1:10:30)</label>
+                            <input type="text" id="expectedTime" name="expectedTime" required maxlength="5" placeholder="5자리 입력 (예: 11030)" value="${old.expectedTime || ''}" inputmode="numeric" oninput="this.value=this.value.replace(/[^0-9]/g,'')">
                         </div>
-                    </div>
 
-                    <button type="submit">접수하기</button>
+                        <!-- 8. 보호자 이름 -->
+                        <div class="form-group">
+                            <label for="guardianName">8. 보호자 이름 </label>
+                            <input type="text" id="guardianName" name="guardianName" required placeholder="(띄어쓰기 없이)" value="${old.guardianName || ''}" oninput="this.value=this.value.replace(/\\s/g,'')">
+                        </div>
+
+                        <!-- 9. 보호자 연락처 -->
+                        <div class="form-group">
+                            <label for="guardianPhone">9. 보호자 연락처 <br>(숫자 입력)</label>
+                            <input type="text" id="guardianPhone" name="guardianPhone" required maxlength="12" placeholder="예: 01012341234" value="${old.guardianPhone || ''}" inputmode="numeric" oninput="this.value=this.value.replace(/[^0-9]/g,'')">
+                        </div>
+
+                        <!-- 10. 질병유무 -->
+                        <div class="form-group">
+                            <label>10. 질병유무</label>
+                            <div class="radio-group">
+                                <label class="radio-label"><input type="radio" name="hasMedical" value="no" ${!old.hasMedical || old.hasMedical === 'no' ? 'checked' : ''} onclick="toggleMedicalInput('no')"> 없음</label>
+                                <label class="radio-label"><input type="radio" name="hasMedical" value="yes" ${old.hasMedical === 'yes' ? 'checked' : ''} onclick="toggleMedicalInput('yes')"> 있음</label>
+                            </div>
+                        </div>
+
+                        <div class="form-group">
+                            <label for="memo">기타 사항 (질병 유무가 있는 경우 작성)</label>
+                            <textarea id="memo" name="memo" placeholder="상세 내용을 적어주세요" disabled>${old.memo || ''}</textarea>
+                        </div>
+
+                        <!-- 11. 기념품 (셔츠 사이즈) -->
+                        <div class="form-group">
+                            <label>11. 기념품 (셔츠 사이즈)</label>
+                            <div class="radio-group">
+                                <label class="radio-label"><input type="radio" name="souvenir1" value="S (85 ~ 90)" ${old.souvenir1 === 'S (85 ~ 90)' ? 'checked' : ''} required> S (85 ~ 90)</label>
+                                <label class="radio-label"><input type="radio" name="souvenir1" value="M (95 ~ 100)" ${old.souvenir1 === 'M (95 ~ 100)' ? 'checked' : ''}> M (95 ~ 100)</label>
+                                <label class="radio-label"><input type="radio" name="souvenir1" value="L (100 ~ 105)" ${old.souvenir1 === 'L (100 ~ 105)' ? 'checked' : ''}> L (100 ~ 105)</label>
+                                <label class="radio-label"><input type="radio" name="souvenir1" value="XL (105 ~ 110)" ${old.souvenir1 === 'XL (105 ~ 110)' ? 'checked' : ''}> XL (105 ~ 110)</label>
+                                <label class="radio-label"><input type="radio" name="souvenir1" value="XXL (110 ~ 115)" ${old.souvenir1 === 'XXL (110 ~ 115)' ? 'checked' : ''}> XXL (110 ~ 115)</label>
+                            </div>
+                        </div>
+
+                        <!-- 12. 소속클럽 여부 -->
+                        <div class="form-group">
+                            <label>12. 소속클럽 여부</label>
+                            <div class="radio-group">
+                                <label class="radio-label"><input type="radio" name="hasClub" value="no" ${!old.hasClub || old.hasClub === 'no' ? 'checked' : ''} onclick="toggleClubInput('no')"> 없음</label>
+                                <label class="radio-label"><input type="radio" name="hasClub" value="yes" ${old.hasClub === 'yes' ? 'checked' : ''} onclick="toggleClubInput('yes')"> 있음</label>
+                            </div>
+                        </div>
+
+                        <div class="form-group">
+                            <label for="club">소속클럽명</label>
+                            <input type="text" id="club" name="club" placeholder="클럽이 있는경우 입력" value="${old.club || ''}" disabled>
+                        </div>
+
+                        <!-- 13. 홍보동의여부 -->
+                        <div class="form-group">
+                            <label>13. 홍보동의여부</label>
+                            <div class="radio-group">
+                                <label class="radio-label"><input type="radio" name="marketingConsent" value="받고 싶다" ${!old.marketingConsent || old.marketingConsent === '받고 싶다' ? 'checked' : ''} required> 받고 싶다</label>
+                                <label class="radio-label"><input type="radio" name="marketingConsent" value="받고 싶지 않다" ${old.marketingConsent === '받고 싶지 않다' ? 'checked' : ''}> 받고 싶지 않다</label>
+                            </div>
+                        </div>
+
+                        <!-- 14. 본대회를 알게 된 경위 (pr_source) -->
+                        <div class="form-group">
+                            <label for="pr_source">14. 본대회를 알게 된 경위</label>
+                            <select id="pr_source" name="pr_source" required>
+                                <option value="" disabled ${!old.pr_source ? 'selected' : ''}>경위를 선택해 주세요</option>
+                                <option value="본 협회의 카페 게시판 공지" ${old.pr_source === '본 협회의 카페 게시판 공지' ? 'selected' : ''}>본 협회의 카페 게시판 공지</option>
+                                <option value="협회의 안내 문자 또는 카톡" ${old.pr_source === '협회의 안내 문자 메시지' ? 'selected' : ''}>협회의 안내 문자 메시지</option>
+                                <option value="지인 및 동호회원 추천" ${old.pr_source === '지인 및 동호회원 추천' ? 'selected' : ''}>지인 및 동호회원 추천</option>
+                                <option value="수영장 / 클럽의 카페 게시판 공지" ${old.pr_source === '수영장 / 클럽 카페의 게시판 공지' ? 'selected' : ''}>수영장 / 클럽 카페의 게시판 공지</option>
+                                <option value="인터넷 검색 (포털 사이트, 블로그 등)" ${old.pr_source === '인터넷 검색 (포털 사이트, 블로그 등)' ? 'selected' : ''}>인터넷 검색 (포털 사이트, 블로그 등)</option>
+                                <option value="SNS (인스타그램, 페이스북 등)" ${old.pr_source === 'SNS (인스타그램, 페이스북 등)' ? 'selected' : ''}>SNS (인스타그램, 페이스북 등)</option>
+                                <option value="이전 대회 참가 경험" ${old.pr_source === '이전 대회 참가 경험' ? 'selected' : ''}>이전 대회 참가 경험</option>
+                                <option value="기타" ${old.pr_source === '기타' ? 'selected' : ''}>기타</option>
+                            </select>
+                        </div>
+
+                        <button type="submit">접수하기</button>
+                    </div>
                 </form>
                 <a href="/" style="display:block; text-align:center; margin-top:20px; text-decoration:none; background-color:#6c757d; color:white; height:75px; line-height:75px; border-radius:10px; font-size:26px; font-weight:bold;">메인으로 돌아가기</a>
             </div>
@@ -464,6 +588,7 @@ router.post('/search', (req, res) => {
     const memo = hasMedical === 'yes' ? (req.body.memo || '').trim() : '없음';
     const souvenir1 = req.body.souvenir1 || '';
     const marketingConsent = req.body.marketingConsent || '';
+    const prSource = (req.body.pr_source || '').trim();
     const entryFee = '미확인';
 
     const phone = formatPhone(rawPhone);
@@ -478,6 +603,7 @@ router.post('/search', (req, res) => {
     if (!gender) return res.send(`<script>alert('성별을 선택해 주세요.'); window.location.href='/register${qs}';</script>`);
     if (!rawIdNumber) return res.send(`<script>alert('주민등록번호를 입력해 주세요.'); window.location.href='/register${qs}';</script>`);
     if (!rawPhone) return res.send(`<script>alert('연락처를 입력해 주세요.'); window.location.href='/register${qs}';</script>`);
+    if (!address) return res.send(`<script>alert('지역을 선택해 주세요.'); window.location.href='/register${qs}';</script>`);
     if (hasClub === 'yes' && !club) return res.send(`<script>alert('소속클럽명을 입력해 주세요.'); window.location.href='/register${qs}';</script>`);
     if (!desiredEvent) return res.send(`<script>alert('희망종목를 선택해 주세요.'); window.location.href='/register${qs}';</script>`);
     if (!rawExpectedTime) return res.send(`<script>alert('예상기록을 입력해 주세요.'); window.location.href='/register${qs}';</script>`);
@@ -486,6 +612,7 @@ router.post('/search', (req, res) => {
     if (hasMedical === 'yes' && !memo) return res.send(`<script>alert('질병 내용을 입력해 주세요.'); window.location.href='/register${qs}';</script>`);
     if (!souvenir1) return res.send(`<script>alert('기념품(셔츠 사이즈)을 선택해 주세요.'); window.location.href='/register${qs}';</script>`);
     if (!marketingConsent) return res.send(`<script>alert('홍보동의여부를 선택해 주세요.'); window.location.href='/register${qs}';</script>`);
+    if (!prSource) return res.send(`<script>alert('본대회를 알게 된 경위를 선택해 주세요.'); window.location.href='/register${qs}';</script>`);
 
     if (rawIdNumber.length !== 13) {
         return res.send(`<script>alert('주민등록번호는 숫자 13자리여야 합니다.'); window.location.href='/register${qs}';</script>`);
@@ -508,7 +635,6 @@ router.post('/search', (req, res) => {
     const now = getKSTDate();
     const regDate = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-${String(now.getDate()).padStart(2,'0')} ${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')}:${String(now.getSeconds()).padStart(2,'0')}`;
 
-    // 📌 수파베이스 컬럼 매칭 (영문 컬럼명)
     const newRow = {
         name: name,
         gender: gender,
@@ -526,11 +652,11 @@ router.post('/search', (req, res) => {
         souvenir1: souvenir1,
         souvenir2: '',
         marketing_consent: marketingConsent,
+        pr_source: prSource,
         notes: '',
         registered_at: regDate
     };
 
-    // 대기열에 rawPhone(연락처 전체) 함께 전달
     registerQueue.push({ newRow, idNumber, name, phone: rawPhone, desiredEvent, qs, res });
     processRegisterQueue();
 });
