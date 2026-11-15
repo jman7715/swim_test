@@ -5,8 +5,6 @@ const fs = require('fs'); // 📌 config.json 파일을 읽기 위해 추가된 
 // 📌 Supabase 연결 설정 추가
 const supabase = require('./supabase');
 
-
-
 // 📌 공통 한국 시간(KST) 구하기 도구 함수 불러오기 (서버 타임존 문제 해결용)
 const { getKSTDate } = require('./utils');
 
@@ -19,19 +17,20 @@ app.use(express.json());
 app.use(express.static(path.join(__dirname)));
 
 // 📌 서비스 라우터 연결
-const ticketRouter = require('./ticket');          // 1. 참가 접수 처리 라우터
+const ticketRouter = require('./ticket');             // 1. 참가 접수 처리 라우터
 const playerCheckRouter = require('./player_check');   // 2. 접수 조회 및 수정 처리 라우터
 
 app.use('/register', ticketRouter);
 app.use('/entry', playerCheckRouter);
 
 // 📌 기타 라우터 연결 (배번 공지 및 관리자 기능)
-const bibRouter = require('./player_bib');          // 3. 배번/레인/조 공지 연결
-app.use('/bib', bibRouter);                        
-const adminRouter = require('./admin');            // 관리자 기능 연결
+const bibRouter = require('./player_bib');             // 3. 배번/레인/조 공지 연결
+app.use('/bib', bibRouter);                                 
+const adminRouter = require('./admin');                // 관리자 기능 연결
 app.use('/admin', adminRouter);
 
-const adminBibsRouter = require('./admin_bibs');        // 베번수정 권한자 전용화면
+// 📌 관리자 전용 배번/시간/동의상태 수정 페이지 라우터 연결 (admin_bibs.js)
+const adminBibsRouter = require('./admin_bibs');        
 app.use('/admin/bibs', adminBibsRouter);
 
 
@@ -275,5 +274,3 @@ app.get('/', (req, res) => {
 app.listen(PORT, () => {
     console.log(`메인 서버가 실행되었습니다: http://localhost:${PORT}`);
 });
-
-
