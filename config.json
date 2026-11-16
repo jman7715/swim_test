@@ -1,5 +1,5 @@
 {
-  "competitionName": "2026년 아쿠아마라톤 대회",
+  "competitionName": "대회접수 TEST",
   "competitionDate": "2026.11.22",
 
   "regStartDate": "2026.10.22 13:00",
@@ -19,9 +19,9 @@
   "admins": [
     { "adminName": "아무개", "adminPassword": "1122", "adminAuth": "배번수정" },
     { "adminName": "장백산", "adminPassword": "1122", "adminAuth": "배번수정" },
-    { "adminName": "김찬희", "adminPassword": "9622", "adminAuth": "접수수정" },
-    { "adminName": "최승혁", "adminPassword": "1027", "adminAuth": "접수수정" },
-    { "adminName": "임원", "adminPassword": "1122", "adminAuth": "보기" }
+    { "adminName": "접수1", "adminPassword": "1122", "adminAuth": "접수수정" },
+    { "adminName": "접수", "adminPassword": "1122", "adminAuth": "접수수정" },
+    { "adminName": "보기", "adminPassword": "1122", "adminAuth": "보기" }
   ],
 
   
